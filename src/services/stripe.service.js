@@ -56,6 +56,15 @@ class StripeService {
     return stripe.checkout.sessions.retrieve(sessionId);
   }
 
+  async retrieveCheckoutSessionByPaymentIntent(paymentIntentId) {
+    const stripe = this.getClient();
+    const sessions = await stripe.checkout.sessions.list({
+      payment_intent: paymentIntentId,
+      limit: 1
+    });
+    return sessions.data[0] || null;
+  }
+
   constructWebhookEvent(payload, signature) {
     if (!env.stripe.secretKey || !env.stripe.webhookSecret) {
       throw new ApiError(

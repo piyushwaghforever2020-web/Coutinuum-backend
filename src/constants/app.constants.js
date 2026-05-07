@@ -9,7 +9,8 @@ const REGISTRATION_STATUSES = Object.freeze(['complete', 'incomplete']);
 const COHORT_STATUSES = Object.freeze(['active', 'full', 'closed']);
 const STRIPE_EVENTS = Object.freeze({
   CHECKOUT_SESSION_COMPLETED: 'checkout.session.completed',
-  CHECKOUT_SESSION_ASYNC_PAYMENT_FAILED: 'checkout.session.async_payment_failed'
+  CHECKOUT_SESSION_ASYNC_PAYMENT_FAILED: 'checkout.session.async_payment_failed',
+  PAYMENT_INTENT_PAYMENT_FAILED: 'payment_intent.payment_failed'
 });
 
 const HTTP_STATUS = Object.freeze({

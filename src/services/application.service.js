@@ -537,6 +537,31 @@ class ApplicationService {
     return result;
   }
 
+  async processFailedPaymentIntent(paymentIntentData) {
+    const paymentIntentId = paymentIntentData?.id;
+
+    console.log('[Stripe Webhook] Processing payment_intent.payment_failed.', {
+      payment_intent_id: paymentIntentId
+    });
+
+    if (!paymentIntentId) {
+      throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'Missing payment intent ID.');
+    }
+
+    // Look up the checkout session to get participant/cohort metadata
+    const session = await stripeService.retrieveCheckoutSessionByPaymentIntent(paymentIntentId);
+
+    if (!session) {
+      console.warn('[Stripe Webhook] No checkout session found for payment intent.', {
+        payment_intent_id: paymentIntentId
+      });
+      return { processed: false, reason: 'no_session_found' };
+    }
+
+    // Reuse the existing failed session handler — it has all the DB + email logic
+    return this.processFailedCheckoutSession(session);
+  }
+
   //------------- Process failed checkout session -------------//
   async processFailedCheckoutSession(sessionData) {
 
@@ -667,7 +692,8 @@ class ApplicationService {
       failedEmailPayload = {
         participantEmail: participant.email,
         participantName: participant.name,
-        cohortName: cohort.name
+        cohortName: cohort.name,
+        retryUrl: sessionData.url || '#'
       };
 
       return {

@@ -38,6 +38,14 @@ const handleWebhook = asyncHandler(async (req, res) => {
       result
     });
   } 
+   // new one block
+  else if (event.type === STRIPE_EVENTS.PAYMENT_INTENT_PAYMENT_FAILED) {
+    const result = await applicationService.processFailedPaymentIntent(event.data.object);
+    console.log('[Stripe Webhook] Payment intent failure processed.', {
+      event_id: event.id,
+      result
+    });
+  }
   else {
     console.log('[Stripe Webhook] Event ignored.', {
       event_id: event.id,
