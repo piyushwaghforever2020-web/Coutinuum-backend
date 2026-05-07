@@ -14,6 +14,20 @@ const { HTTP_STATUS } = require('../constants/app.constants');
 const { sendPaymentConfirmationEmail,sendPaymentFailedEmail } = require('../utils/helpers');
 
 const normalizeEmail = (email) => String(email).trim().toLowerCase();
+// Cohort prices may be stored as display strings like "6000 USD".
+// Extract the numeric portion so checkout/payment math still works.
+const parseStoredPrice = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  const numericMatch = String(value ?? '')
+    .replace(/,/g, '')
+    .match(/\d+(?:\.\d+)?/);
+
+  return numericMatch ? Number(numericMatch[0]) : NaN;
+};
+
 const UPCOMING_COHORT_FILE_NAME = 'Upcoming_Cohort_Dates_v2 1.pdf';
 const UPCOMING_COHORT_FILE_PATH = path.join(
   __dirname,
@@ -57,7 +71,7 @@ const mapApplicationParticipant = (participant) => ({
         id: participant.cohort.id,
         name: participant.cohort.name,
         start_date: participant.cohort.startDate,
-        price: Number(participant.cohort.price),
+        price: parseStoredPrice(participant.cohort.price),
         seat_limit: participant.cohort.seatLimit,
         seats_filled: participant.cohort.seatsFilled,
         status: participant.cohort.status,
@@ -227,6 +241,11 @@ class ApplicationService {
 
     const cohort = participant.cohort || (await ensureCohortExists(payload.cohort_id));
     ensureCohortAvailableForPayment(cohort);
+    const cohortPrice = parseStoredPrice(cohort.price);
+
+    if (!Number.isFinite(cohortPrice)) {
+      throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'Invalid cohort price.');
+    }
 
     const latestPayment = participant.payments?.length
       ? [...participant.payments].sort(
@@ -251,7 +270,7 @@ class ApplicationService {
       cohortId: cohort.id,
       customerEmail: email,
       currency: env.stripe.currency,
-      unitAmount: Math.round(Number(cohort.price) * 100),
+      unitAmount: Math.round(cohortPrice * 100),
       productName: cohort.name,
       productDescription: cohort.description,
       successUrl: payload.success_url || env.stripe.successUrl,
@@ -291,7 +310,7 @@ class ApplicationService {
       const paymentPayload = {
         participantId: lockedParticipant.id,
         cohortId: lockedCohort.id,
-        amount: Number(lockedCohort.price),
+        amount: cohortPrice,
         status: 'pending',
         transactionId: null,
         stripeCheckoutSessionId: session.id,
@@ -372,6 +391,7 @@ class ApplicationService {
       if (!cohort) {
         throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Cohort not found.');
       }
+      const cohortPrice = parseStoredPrice(cohort.price);
 
       let payment = await paymentRepository.findByStripeCheckoutSessionId(sessionData.id, {
         transaction,
@@ -429,7 +449,7 @@ class ApplicationService {
         await paymentRepository.update(
           payment,
           {
-            amount: amount || Number(payment.amount) || Number(cohort.price),
+            amount: amount || Number(payment.amount) || cohortPrice,
             status: 'paid',
             transactionId: paymentIntentId || sessionData.id,
             stripeCheckoutSessionId: sessionData.id,
@@ -444,7 +464,7 @@ class ApplicationService {
           {
             participantId,
             cohortId,
-            amount: amount || Number(cohort.price),
+            amount: amount || cohortPrice,
             status: 'paid',
             transactionId: paymentIntentId || sessionData.id,
             stripeCheckoutSessionId: sessionData.id,
@@ -568,6 +588,7 @@ class ApplicationService {
       if (!cohort) {
         throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Cohort not found.');
       }
+      const cohortPrice = parseStoredPrice(cohort.price);
 
       let payment = await paymentRepository.findByStripeCheckoutSessionId(sessionData.id, {
         transaction,
@@ -606,7 +627,7 @@ class ApplicationService {
         await paymentRepository.update(
           payment,
           {
-            amount: amount || Number(payment.amount),
+            amount: amount || Number(payment.amount) || cohortPrice,
             status: 'failed',
             transactionId: paymentIntentId || payment.transactionId || sessionData.id,
             stripeCheckoutSessionId: sessionData.id,
@@ -622,7 +643,7 @@ class ApplicationService {
           {
             participantId,
             cohortId,
-            amount: amount || 0,
+            amount: amount || cohortPrice || 0,
             status: 'failed',
             transactionId: paymentIntentId || sessionData.id,
             stripeCheckoutSessionId: sessionData.id,

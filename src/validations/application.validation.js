@@ -12,8 +12,8 @@ const answersSchema = Joi.alternatives().try(
 const submitApplication = {
   body: Joi.object({
     name: Joi.string().trim().max(150).required(),
-    program_id: Joi.number().integer().positive().optional(),
-    programm_id: Joi.number().integer().positive().optional(),
+    program_id: Joi.number().integer().positive().optional().allow(null,''),
+    programm_id: Joi.number().integer().positive().optional().allow(null,''),
     email: Joi.string().email().required(),
     phone: Joi.string().trim().max(50).allow('', null),
     company: Joi.string().trim().max(150).allow('', null),

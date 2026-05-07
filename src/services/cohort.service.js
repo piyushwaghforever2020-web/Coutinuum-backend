@@ -82,20 +82,37 @@ const syncCohortPrograms = async (cohort, programsPayload, seatLimit) => {
     return;
   }
 
-  const allocatedSeatsBase = seatLimit;
+  const allocatedSeatsBase = seatLimit || 0;
+  const resolvedProgramIds = [];
 
   for (let i = 0; i < programsPayload.length; i++) {
     const p = programsPayload[i];
-    
-    await Program.upsert({
-      id: p.program_id,
-      name: p.program_name
-    });
+
+    let programId;
+
+    if (!p.program_id) {
+      // No ID provided — create a new program
+      const newProgram = await Program.create({
+        name: p.program_name,
+        description: p.program_description
+      });
+      programId = newProgram.id;
+    } else {
+      // ID provided — upsert existing program
+      await Program.upsert({
+        id: p.program_id,
+        name: p.program_name,
+        description: p.program_description
+      });
+      programId = p.program_id;
+    }
+
+    resolvedProgramIds.push(programId);
 
     const allocatedSeats = allocatedSeatsBase;
 
     const [mapping, created] = await CohortProgram.findOrCreate({
-      where: { cohortId: cohort.id, programId: p.program_id },
+      where: { cohortId: cohort.id, programId },
       defaults: {
         allocatedSeats,
         seatsFilled: 0,
@@ -109,11 +126,10 @@ const syncCohortPrograms = async (cohort, programsPayload, seatLimit) => {
     }
   }
 
-  const validProgramIds = programsPayload.map((p) => p.program_id);
   await CohortProgram.destroy({
     where: {
       cohortId: cohort.id,
-      programId: { [require('sequelize').Op.notIn]: validProgramIds }
+      programId: { [require('sequelize').Op.notIn]: resolvedProgramIds }
     }
   });
 };
@@ -153,7 +169,7 @@ const mapCohortSummary = (cohort, filledSeats = 0, revenue = 0, mostBookedSeats 
     duration_weeks: durationWeeks,
     duration_format: durationFormat,
     duration,
-    price: Number(cohort.price),
+    price: cohort.price,
     seat_limit: cohort.seatLimit,
     seats_filled: filledSeats,
     seats_remaining: seatsRemaining,
@@ -170,6 +186,7 @@ const mapCohortSummary = (cohort, filledSeats = 0, revenue = 0, mostBookedSeats 
     programs: cohort.programs ? cohort.programs.map((p) => ({
       program_id: p.id,
       program_name: p.name,
+      program_description: p.description,
       allocated_seats: p.CohortProgram ? p.CohortProgram.allocatedSeats : 0,
       seats_filled: p.CohortProgram ? p.CohortProgram.seatsFilled : 0,
       is_full: p.CohortProgram ? p.CohortProgram.isFull : false
@@ -202,7 +219,7 @@ class CohortService {
         duration_weeks: durationWeeks,
         duration_format: durationFormat,
         duration,
-        price: Number(cohort.price),
+        price: cohort.price,
         seat_limit: cohort.seatLimit,
         seats_filled: Number(cohort.seatsFilled),
         seats_remaining: Math.max(

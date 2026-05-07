@@ -25,19 +25,11 @@ const priceStringToNumber = (value, helpers) => {
 };
 
 const priceField = Joi.custom((value, helpers) => {
-  const normalized = String(value).trim().replace(/[$,]/g, ''); // also strip $ signs
-
-  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) {
+  if (value === null || value === undefined || String(value).trim() === '') {
     return helpers.error('any.invalid');
   }
 
-  const parsed = Number(normalized);
-
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return helpers.error('any.invalid');
-  }
-
-  return parsed;
+  return String(value).trim(); // just return as-is, preserve $ and formatting
 });
 
 
@@ -72,13 +64,14 @@ const createCohort = {
     investment_tiers: Joi.array().items(Joi.object({
       tier: Joi.string().optional(),
       price:priceField.optional(),
-      best_for: Joi.string().optional()
+      best_for: Joi.string().allow('').optional()
     })).optional(),
     scarcity_text: Joi.string().trim().allow('', null),
     display_price: Joi.string().trim().max(255).allow('', null),
     programs: Joi.array().items(Joi.object({
-      program_id: Joi.number().integer().positive().optional(),
-      program_name: Joi.string().optional()
+      program_id: Joi.number().integer().positive().empty('').allow(null).optional(),
+      program_name: Joi.string().optional(),
+      program_description : Joi.string().optional()
     })).optional()
   })
 };
@@ -102,13 +95,14 @@ const updateCohort = {
     investment_tiers: Joi.array().items(Joi.object({
       tier: Joi.string().optional(),
       price: priceField.optional(),
-      best_for: Joi.string().optional()
-    })).optional(),
+      best_for: Joi.string().allow('').optional()
+    })).optional().allow('', null),
     scarcity_text: Joi.string().trim().allow('', null),
     display_price: Joi.string().trim().max(255).allow('', null),
     programs: Joi.array().items(Joi.object({
-      program_id: Joi.number().integer().positive().optional(),
-      program_name: Joi.string().optional()
+      program_id: Joi.number().integer().positive().empty('').allow(null).optional(),
+      program_name: Joi.string().optional(),
+      program_description : Joi.string().optional()
     })).optional()
   })
     .min(1)

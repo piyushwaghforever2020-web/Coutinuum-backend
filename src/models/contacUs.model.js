@@ -36,10 +36,20 @@ module.exports = (sequelize, DataTypes) => {
             allowNull : true,
             field : 'message'
         },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'created_at'
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'updated_at'
+        },
       },
       {
         tableName: 'contact_us',
-        timestamps: false
+        timestamps: true
       }
     );
   

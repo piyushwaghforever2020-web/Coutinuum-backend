@@ -41,7 +41,7 @@ class ContactUsRepository {
   async findAll({ filters, limit, offset } = {}) {
     return ContactUs.findAndCountAll({
       where: this.buildFilters(filters),
-      order: [['id', 'DESC']],
+      order: [['createdAt', 'DESC']],
       limit,
       offset
     });
