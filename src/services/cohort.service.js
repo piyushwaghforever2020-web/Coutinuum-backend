@@ -148,12 +148,7 @@ const mapCohortSummary = (cohort, filledSeats = 0, revenue = 0, mostBookedSeats 
     ? Number(((filledSeats / cohort.seatLimit) * 100).toFixed(2))
     : 0;
 
-  const status =
-    cohort.status === 'closed'
-      ? 'closed'
-      : filledSeats >= cohort.seatLimit
-        ? 'full'
-        : cohort.status;
+  const status = cohort.status === 'closed' ? 'closed' : filledSeats >= cohort.seatLimit ? 'full' : cohort.status;
 
   const durationWeeks = calculateDurationWeeks(cohort.startDate, cohort.endDate);
   const durationFormat = formatDateRange(cohort.startDate, cohort.endDate);
