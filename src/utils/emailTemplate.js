@@ -74,7 +74,7 @@ const buildEmailCard = ({
            <span style="background:#491B27;color:#ffffff;padding:5px 14px;
                         border-radius:20px;font-size:12px;font-weight:600;
                         white-space:nowrap;">
-             &#x2398;&nbsp;Copy
+             &#x2398;
            </span>
          </div>
          <p style="margin:10px 0 0;font-size:12px;color:#888888;">

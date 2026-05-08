@@ -7,7 +7,7 @@ const sendPaymentConfirmationEmail = async ({
   participantName,
   cohortName,
   accessPassword,
-  programUrl = '#'
+  programUrl = 'https://continuumtransformation.com/'
 }) => {
   await sendMail({
     to: [{ email: participantEmail, name: participantName }],
