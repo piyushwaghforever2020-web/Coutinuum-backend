@@ -43,13 +43,13 @@ const buildEmailCard = ({
 }) => {
   const iconHtml =
   iconType === 'success'
-    ? `<div style="text-align:center;margin-bottom:24px;">
-         <div style="display:inline-flex;align-items:center;justify-content:center;
-                     width:52px;height:52px;border-radius:50%;background:#E9F7EF;
-                     font-size:26px;color:#27AE60;line-height:1;">
-           &times;
-         </div>
-       </div>`
+  ? `<div style="text-align:center;margin-bottom:24px;">
+       <div style="display:inline-flex;align-items:center;justify-content:center;
+                   width:52px;height:52px;border-radius:50%;background:#E9F7EF;
+                   font-size:26px;color:#27AE60;line-height:1;">
+         &#10003;
+       </div>
+     </div>`
     : iconType === 'error'
     ? `<div style="text-align:center;margin-bottom:24px;">
         <div style="display:inline-flex;align-items:center;justify-content:center;
