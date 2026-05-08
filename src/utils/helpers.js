@@ -23,7 +23,7 @@ const sendPaymentConfirmationEmail = async ({
           hint: 'Use this password to download the upcoming cohort file.'
         }
       }),
-      buttonLabel: 'Continue To Your Program',
+      buttonLabel: 'Download Cohort Calendar',
       buttonUrl: programUrl,
       footer: "Didn't expect this? Ignore it."
     }),
