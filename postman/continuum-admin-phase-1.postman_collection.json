@@ -1,0 +1,670 @@
+{
+  "info": {
+    "_postman_id": "ffdf8cf5-1588-4870-8e54-8a880b9857c7",
+    "name": "Continuum Backend API",
+    "description": "Postman collection for the Continuum cohort enrollment backend, including admin APIs and the user application + payment flow.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{adminToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseOrigin",
+      "value": "http://localhost:4000"
+    },
+    {
+      "key": "baseUrl",
+      "value": "{{baseOrigin}}/api/v1"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@continuum.com"
+    },
+    {
+      "key": "adminPassword",
+      "value": "Admin@123"
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "applicantEmail",
+      "value": "applicant@example.com"
+    },
+    {
+      "key": "cohortName",
+      "value": "AI Leadership Cohort {{$timestamp}}"
+    },
+    {
+      "key": "successUrl",
+      "value": "http://localhost:3000/payment/success"
+    },
+    {
+      "key": "cancelUrl",
+      "value": "http://localhost:3000/payment/cancel"
+    },
+    {
+      "key": "participantId",
+      "value": "1"
+    },
+    {
+      "key": "cohortId",
+      "value": "1"
+    },
+    {
+      "key": "paymentId",
+      "value": "1"
+    },
+    {
+      "key": "checkoutSessionId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseOrigin}}/health",
+              "host": [
+                "{{baseOrigin}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Checks whether the service is running."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response && response.data && response.data.token) {",
+                  "  pm.collectionVariables.set('adminToken', response.data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Authenticates the admin user and stores the returned JWT in {{adminToken}}."
+          }
+        },
+        {
+          "name": "Admin Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('adminToken', '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Logs out the current admin session and revokes the active JWT in the database."
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Enrollment",
+      "item": [
+        {
+          "name": "Submit Application",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response && response.data && response.data.id) {",
+                  "  pm.collectionVariables.set('participantId', String(response.data.id));",
+                  "}",
+                  "if (response && response.data && response.data.email) {",
+                  "  pm.collectionVariables.set('applicantEmail', response.data.email);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Riya Malhotra\",\n  \"email\": \"{{applicantEmail}}\",\n  \"phone\": \"+91-9876543210\",\n  \"company\": \"Continuum Labs\",\n  \"role\": \"Product Manager\",\n  \"cohort_id\": {{cohortId}},\n  \"answers\": {\n    \"motivation\": \"I want to join this cohort to sharpen my AI product strategy.\",\n    \"experience_level\": \"intermediate\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/application",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "application"
+              ]
+            },
+            "description": "Creates or updates a participant application by email + cohort."
+          }
+        },
+        {
+          "name": "Create Checkout Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response && response.data && response.data.session_id) {",
+                  "  pm.collectionVariables.set('checkoutSessionId', response.data.session_id);",
+                  "}",
+                  "if (response && response.data && response.data.participant_id) {",
+                  "  pm.collectionVariables.set('participantId', String(response.data.participant_id));",
+                  "}",
+                  "if (response && response.data && response.data.cohort_id) {",
+                  "  pm.collectionVariables.set('cohortId', String(response.data.cohort_id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{applicantEmail}}\",\n  \"cohort_id\": {{cohortId}},\n  \"success_url\": \"{{successUrl}}\",\n  \"cancel_url\": \"{{cancelUrl}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/create-checkout-session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "create-checkout-session"
+              ]
+            },
+            "description": "Creates or reuses a Stripe Checkout session for the application."
+          }
+        },
+        {
+          "name": "Stripe Webhook Example",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Stripe-Signature",
+                "value": "replace_with_valid_signature"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_test_checkout_completed\",\n  \"object\": \"event\",\n  \"type\": \"checkout.session.completed\",\n  \"data\": {\n    \"object\": {\n      \"id\": \"{{checkoutSessionId}}\",\n      \"object\": \"checkout.session\",\n      \"amount_total\": 99900,\n      \"payment_intent\": \"pi_test_123\",\n      \"metadata\": {\n        \"participant_id\": \"{{participantId}}\",\n        \"cohort_id\": \"{{cohortId}}\"\n      }\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/stripe/webhook",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stripe",
+                "webhook"
+              ]
+            },
+            "description": "Reference request shape only. Stripe webhook verification requires a real Stripe-Signature header."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "dashboard"
+              ]
+            },
+            "description": "Returns admin dashboard metrics."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Participants",
+      "item": [
+        {
+          "name": "List Participants",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/participants?page=1&limit=10&search=&cohort=&payment_status=&registration_status=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "participants"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "cohort",
+                  "value": ""
+                },
+                {
+                  "key": "payment_status",
+                  "value": ""
+                },
+                {
+                  "key": "registration_status",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Lists participants with optional search and status filters."
+          }
+        },
+        {
+          "name": "Get Participant By Id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/participants/{{participantId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "participants",
+                "{{participantId}}"
+              ]
+            },
+            "description": "Fetches a single participant with cohort and payment details."
+          }
+        },
+        {
+          "name": "Update Participant Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_status\": \"pending\",\n  \"registration_status\": \"incomplete\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/participants/{{participantId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "participants",
+                "{{participantId}}",
+                "status"
+              ]
+            },
+            "description": "Updates payment and/or registration status for a participant."
+          }
+        },
+        {
+          "name": "Export Participants CSV",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/participants/export?search=&cohort=&payment_status=&registration_status=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "participants",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "cohort",
+                  "value": ""
+                },
+                {
+                  "key": "payment_status",
+                  "value": ""
+                },
+                {
+                  "key": "registration_status",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Downloads participant data as CSV."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cohorts",
+      "item": [
+        {
+          "name": "List Cohorts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/cohorts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "cohorts"
+              ]
+            },
+            "description": "Returns all cohorts with seat and revenue summaries."
+          }
+        },
+        {
+          "name": "Create Cohort",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response && response.data && response.data.id) {",
+                  "  pm.collectionVariables.set('cohortId', String(response.data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{cohortName}}\",\n  \"description\": \"Advanced leadership program for AI builders.\",\n  \"start_date\": \"2026-05-15\",\n  \"price\": 999,\n  \"seat_limit\": 30,\n  \"refund_policy\": \"Full refund up to 7 days before start date.\",\n  \"status\": \"active\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/cohorts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "cohorts"
+              ]
+            },
+            "description": "Creates a cohort and stores its id in {{cohortId}}."
+          }
+        },
+        {
+          "name": "Get Cohort By Id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/cohorts/{{cohortId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "cohorts",
+                "{{cohortId}}"
+              ]
+            },
+            "description": "Fetches a cohort and its participants."
+          }
+        },
+        {
+          "name": "Update Cohort",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated description for the cohort.\",\n  \"price\": 1199,\n  \"seat_limit\": 40,\n  \"refund_policy\": \"Partial refund up to 3 days before start date.\",\n  \"status\": \"active\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/cohorts/{{cohortId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "cohorts",
+                "{{cohortId}}"
+              ]
+            },
+            "description": "Updates one or more cohort fields."
+          }
+        },
+        {
+          "name": "Delete Cohort",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/admin/cohorts/{{cohortId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "cohorts",
+                "{{cohortId}}"
+              ]
+            },
+            "description": "Soft-deletes a cohort."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "List Payments",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/payments?page=1&limit=10&status=pending&cohort=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "payments"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "status",
+                  "value": "pending"
+                },
+                {
+                  "key": "cohort",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Lists payments with optional status and cohort filters."
+          }
+        },
+        {
+          "name": "Get Payment By Id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/payments/{{paymentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "payments",
+                "{{paymentId}}"
+              ]
+            },
+            "description": "Fetches payment details with participant and cohort data."
+          }
+        },
+        {
+          "name": "Refund Payment",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/payments/{{paymentId}}/refund",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "payments",
+                "{{paymentId}}",
+                "refund"
+              ]
+            },
+            "description": "Marks a payment as refunded."
+          }
+        }
+      ]
+    }
+  ]
+}

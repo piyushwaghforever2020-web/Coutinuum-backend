@@ -1,0 +1,42 @@
+{
+  "name": "continuum-cohort-enrollment-backend",
+  "version": "1.0.0",
+  "description": "Phase 1 admin backend for the Continuum cohort enrollment system.",
+  "main": "src/server.js",
+  "scripts": {
+    "migrate": "node scripts/migrate.js",
+    "migrate:participants": "node scripts/migrate-participants.js",
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "seed:admin": "node scripts/seed-admin.js"
+  },
+  "keywords": [
+    "express",
+    "mysql",
+    "sequelize",
+    "jwt",
+    "admin-api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0",
+    "joi": "^17.13.3",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.1",
+    "mysql2": "^3.11.3",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.7",
+    "sequelize": "^6.37.5",
+    "strip": "^3.0.0",
+    "stripe": "^22.0.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  }
+}
