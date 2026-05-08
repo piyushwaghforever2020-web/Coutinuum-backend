@@ -1,5 +1,6 @@
 const { COHORT_STATUSES } = require('../constants/app.constants');
 
+
 module.exports = (sequelize, DataTypes) => {
   const Cohort = sequelize.define(
     'Cohort',
