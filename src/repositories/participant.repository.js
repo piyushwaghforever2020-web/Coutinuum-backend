@@ -104,6 +104,23 @@ class ParticipantRepository {
   }
 
   async findById(id, options = {}) {
+    const { lock, ...otherOptions } = options;
+    
+    // When using FOR UPDATE lock, we need to separate it because
+    // PostgreSQL doesn't allow FOR UPDATE on the nullable side of outer joins
+    const subQuery = lock
+      ? await Participant.findByPk(id, {
+          attributes: ['id'],
+          transaction: otherOptions.transaction,
+          lock
+        })
+      : null;
+
+    // If we have a lock, verify the participant exists
+    if (lock && !subQuery) {
+      return null;
+    }
+
     return Participant.findByPk(id, {
       include: [
         {
@@ -143,11 +160,32 @@ class ParticipantRepository {
           attributes: ['id', 'name']
         }
       ],
-      ...options
+      ...otherOptions
     });
   }
 
   async findByEmailAndCohort(email, cohortId, options = {}) {
+    const { lock, ...otherOptions } = options;
+    
+    // When using FOR UPDATE lock, we need to separate it because
+    // PostgreSQL doesn't allow FOR UPDATE on the nullable side of outer joins
+    const subQuery = lock
+      ? await Participant.findOne({
+          where: {
+            email,
+            cohortId
+          },
+          attributes: ['id'],
+          transaction: otherOptions.transaction,
+          lock
+        })
+      : null;
+
+    // If we have a lock, verify the participant exists
+    if (lock && !subQuery) {
+      return null;
+    }
+
     return Participant.findOne({
       where: {
         email,
@@ -191,7 +229,7 @@ class ParticipantRepository {
           attributes: ['id', 'name']
         }
       ],
-      ...options
+      ...otherOptions
     });
   }
 

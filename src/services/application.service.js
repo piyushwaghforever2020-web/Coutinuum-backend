@@ -280,7 +280,10 @@ class ApplicationService {
     await sequelize.transaction(async (transaction) => {
       const lockedParticipant = await participantRepository.findById(participant.id, {
         transaction,
-        lock: transaction.LOCK.UPDATE
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Participant
+        }
       });
 
       if (!lockedParticipant) {
@@ -293,7 +296,10 @@ class ApplicationService {
 
       const lockedCohort = await cohortRepository.findById(cohort.id, {
         transaction,
-        lock: transaction.LOCK.UPDATE
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Cohort
+        }
       });
 
       ensureCohortAvailableForPayment(lockedCohort);
@@ -303,7 +309,10 @@ class ApplicationService {
         lockedCohort.id,
         {
           transaction,
-          lock: transaction.LOCK.UPDATE
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Payment
+          }
         }
       );
 
@@ -376,7 +385,10 @@ class ApplicationService {
     const result = await sequelize.transaction(async (transaction) => {
       const participant = await participantRepository.findById(participantId, {
         transaction,
-        lock: transaction.LOCK.UPDATE
+       lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Participant
+        }
       });
 
       if (!participant || Number(participant.cohortId) !== cohortId) {
@@ -385,7 +397,10 @@ class ApplicationService {
 
       const cohort = await cohortRepository.findById(cohortId, {
         transaction,
-        lock: transaction.LOCK.UPDATE
+         lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Cohort
+        }
       });
 
       if (!cohort) {
@@ -395,13 +410,19 @@ class ApplicationService {
 
       let payment = await paymentRepository.findByStripeCheckoutSessionId(sessionData.id, {
         transaction,
-        lock: transaction.LOCK.UPDATE
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Payment
+        }
       });
 
       if (!payment) {
         payment = await paymentRepository.findLatestByParticipantAndCohort(participantId, cohortId, {
           transaction,
-          lock: transaction.LOCK.UPDATE
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Payment
+          }
         });
       }
 
@@ -598,7 +619,10 @@ class ApplicationService {
     const result = await sequelize.transaction(async (transaction) => {
       const participant = await participantRepository.findById(participantId, {
         transaction,
-        lock: transaction.LOCK.UPDATE
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Participant
+        }
       });
 
       if (!participant || Number(participant.cohortId) !== cohortId) {
@@ -607,7 +631,10 @@ class ApplicationService {
 
       const cohort = await cohortRepository.findById(cohortId, {
         transaction,
-        lock: transaction.LOCK.UPDATE
+        lock: {
+        level: transaction.LOCK.UPDATE,
+        of: sequelize.models.Cohort
+      }
       });
 
       if (!cohort) {
@@ -617,13 +644,19 @@ class ApplicationService {
 
       let payment = await paymentRepository.findByStripeCheckoutSessionId(sessionData.id, {
         transaction,
-        lock: transaction.LOCK.UPDATE
+        lock: {
+        level: transaction.LOCK.UPDATE,
+        of: sequelize.models.Payment
+      }
       });
 
       if (!payment) {
         payment = await paymentRepository.findLatestByParticipantAndCohort(participantId, cohortId, {
           transaction,
-          lock: transaction.LOCK.UPDATE
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Payment
+          }
         });
       }
 

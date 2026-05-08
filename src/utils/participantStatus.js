@@ -1,5 +1,5 @@
 const getParticipantPaymentStatus = (paymentStatus) =>
-  paymentStatus === 'pending' ? 'incomplete' : paymentStatus;
+  paymentStatus === 'pending' ? 'pending' : paymentStatus;
 
 const normalizeParticipantPaymentStatusInput = (paymentStatus) => {
   if (!paymentStatus) {

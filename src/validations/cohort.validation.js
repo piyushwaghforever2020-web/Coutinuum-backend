@@ -62,10 +62,10 @@ const createCohort = {
     workshops_text: Joi.string().trim().max(500).allow('', null),
     cohort_size_text: Joi.string().trim().max(500).allow('', null),
     investment_tiers: Joi.array().items(Joi.object({
-      tier: Joi.string().optional(),
-      price:priceField.optional(),
-      best_for: Joi.string().allow('').optional()
-    })).optional(),
+      tier: Joi.string().optional().allow(null,''),
+      price:priceField.optional().allow(null,''),
+      best_for: Joi.string().allow(null,'').optional()
+    })).optional().allow(null,''),
     scarcity_text: Joi.string().trim().allow('', null),
     display_price: Joi.string().trim().max(255).allow('', null),
     programs: Joi.array().items(Joi.object({
