@@ -72,7 +72,7 @@ const parseJSONSafely = (data) => {
   return data;
 };
 
-// Priority: draft > inactive > closed > full > open > active (upcoming)
+// Priority: draft > inactive > full > closed > open > active (upcoming)
 const computeSyncStatus = (cohort) => {
   if (cohort.isDraft) return 'draft';
 
@@ -82,11 +82,11 @@ const computeSyncStatus = (cohort) => {
   const start = cohort.startDate ? new Date(cohort.startDate) : null;
   const end   = cohort.endDate   ? new Date(cohort.endDate)   : null;
 
-  // Past end date → closed regardless of seats
-  if (end && end < now) return 'closed';
-
-  // Seats exhausted and cohort is still running
+  // Seats exhausted always wins over date-based status.
   if (Number(cohort.seatsFilled) >= Number(cohort.seatLimit)) return 'full';
+
+  // Past end date → closed only when seats were not fully filled.
+  if (end && end < now) return 'closed';
 
   // Within date range → open for enrollment
   if (start && end && start <= now && now <= end) return 'open';
