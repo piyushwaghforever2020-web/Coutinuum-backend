@@ -1,4 +1,4 @@
-const { COHORT_STATUSES } = require('../constants/app.constants');
+const { COHORT_STATUSES , FINAL_COHORT_STATUSES} = require('../constants/app.constants');
 
 
 module.exports = (sequelize, DataTypes) => {
@@ -52,10 +52,37 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 'active'
       },
+      syncStatus:{
+        type: DataTypes.ENUM(...FINAL_COHORT_STATUSES),
+        allowNull: false,
+        defaultValue: 'active',
+        field: 'sync_status' 
+      },
       refundPolicy: {
         type: DataTypes.TEXT,
         allowNull: true,
         field: 'refund_policy'
+      },
+      refundDeferralPolicy: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        field: 'refund_deferral_policy'
+      },
+      timeCommitment: {
+        type: DataTypes.STRING(500),
+        allowNull: true,
+        field: 'time_commitment'
+      },
+      programOverview: {
+        type: DataTypes.STRING(1000),
+        allowNull: true,
+        field: 'program_overview'
+      },
+      isDraft: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        field: 'is_draft'
       },
       leaveWith: {
         type: DataTypes.JSON,

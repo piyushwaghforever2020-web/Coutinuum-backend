@@ -7,6 +7,7 @@ const PARTICIPANT_PAYMENT_STATUSES = Object.freeze([
 ]);
 const REGISTRATION_STATUSES = Object.freeze(['complete', 'incomplete']);
 const COHORT_STATUSES = Object.freeze(['active', 'full', 'closed']);
+const FINAL_COHORT_STATUSES = Object.freeze(['full', 'closed','open', 'draft','archived', 'active', 'inactive']);
 const STRIPE_EVENTS = Object.freeze({
   CHECKOUT_SESSION_COMPLETED: 'checkout.session.completed',
   CHECKOUT_SESSION_ASYNC_PAYMENT_FAILED: 'checkout.session.async_payment_failed',
@@ -30,6 +31,7 @@ module.exports = {
   PARTICIPANT_PAYMENT_STATUSES,
   REGISTRATION_STATUSES,
   COHORT_STATUSES,
+  FINAL_COHORT_STATUSES,
   STRIPE_EVENTS,
   HTTP_STATUS
 };

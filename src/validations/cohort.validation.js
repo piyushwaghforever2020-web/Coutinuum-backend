@@ -32,6 +32,16 @@ const priceField = Joi.custom((value, helpers) => {
   return String(value).trim(); // just return as-is, preserve $ and formatting
 });
 
+const refundDeferralPolicyItem = Joi.object({
+  program: Joi.string().trim().max(255).required(),
+  price_per_seat: Joi.string().trim().max(255).required()
+});
+
+// const programOverviewItem = Joi.object({
+//   heading: Joi.string().trim().max(255).required(),
+//   details: Joi.string().trim().required()
+// });
+
 
 const cohortId = {
   params: Joi.object({
@@ -43,7 +53,8 @@ const listCohorts = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
-    is_active: booleanQuery.optional()
+    is_active: booleanQuery.optional(),
+    is_draft: booleanQuery.optional(),
   })
 };
 
@@ -54,9 +65,14 @@ const createCohort = {
     start_date: Joi.date().iso().required(),
     end_date: Joi.date().iso().min(Joi.ref('start_date')).allow(null),
     price: priceField.optional(),
+    is_draft: Joi.boolean().optional(),
     seat_limit: Joi.number().integer().min(1).required(),
     refund_policy: Joi.string().trim().allow('', null),
+    refund_deferral_policy: Joi.array().items(refundDeferralPolicyItem).allow(null),
+    time_commitment: Joi.string().trim().max(500).allow('', null),
+    program_overview: Joi.string().trim().allow('', null),
     is_active: Joi.boolean().optional(),
+    is_draft: Joi.boolean().optional(),
     leave_with: Joi.array().items(Joi.string()).optional(),
     live_sessions_text: Joi.string().trim().max(500).allow('', null),
     workshops_text: Joi.string().trim().max(500).allow('', null),
@@ -86,8 +102,12 @@ const updateCohort = {
     price: priceField,
     seat_limit: Joi.number().integer().min(1),
     refund_policy: Joi.string().trim().allow('', null),
+    refund_deferral_policy: Joi.array().items(refundDeferralPolicyItem).allow(null),
+    time_commitment: Joi.string().trim().max(500).allow('', null),
+    program_overview: Joi.string().trim().allow('', null),
     status: Joi.string().valid(...COHORT_STATUSES),
     is_active: Joi.boolean(),
+    is_draft: Joi.boolean().optional(),
     leave_with: Joi.array().items(Joi.string()).optional(),
     live_sessions_text: Joi.string().trim().max(500).allow('', null),
     workshops_text: Joi.string().trim().max(500).allow('', null),

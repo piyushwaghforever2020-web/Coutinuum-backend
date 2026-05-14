@@ -1,12 +1,16 @@
-const { fn, col, Op } = require('sequelize');
+const { fn, col, Op, where } = require('sequelize');
 const { Cohort, Participant, Payment, Program } = require('../models');
 
 class CohortRepository {
-  buildFilters({ isActive } = {}) {
+  buildFilters({ isActive, isDraft } = {}) {
     const where = {};
 
     if (typeof isActive === 'boolean') {
       where.isActive = isActive;
+    }
+
+    if (typeof isDraft === 'boolean') {
+      where.isDraft = isDraft;
     }
 
     return where;
@@ -29,6 +33,10 @@ class CohortRepository {
 
   async findPublicList() {
     return Cohort.findAll({
+      where :{
+        isDraft: false,
+        isActive: true
+      },
       include: [{
         model: Program,
         as: 'programs',

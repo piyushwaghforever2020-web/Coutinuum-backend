@@ -7,6 +7,7 @@ const routes = require('./routes');
 const stripeWebhookRoutes = require('./routes/stripeWebhook.routes');
 const { errorHandler, notFoundHandler } = require('./middlewares/error.middleware');
 require('./utils/crons/cohortRemindersCron.js')
+require('./utils/crons/syncCohortStatusCron.js')
 
 const app = express();
 

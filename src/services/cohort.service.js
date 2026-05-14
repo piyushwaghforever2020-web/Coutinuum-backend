@@ -72,14 +72,48 @@ const parseJSONSafely = (data) => {
   return data;
 };
 
+// Priority: draft > inactive > closed > full > open > active (upcoming)
+const computeSyncStatus = (cohort) => {
+  if (cohort.isDraft) return 'draft';
+
+  if (!cohort.isActive) return 'inactive';
+
+  const now = new Date();
+  const start = cohort.startDate ? new Date(cohort.startDate) : null;
+  const end   = cohort.endDate   ? new Date(cohort.endDate)   : null;
+
+  // Past end date → closed regardless of seats
+  if (end && end < now) return 'closed';
+
+  // Seats exhausted and cohort is still running
+  if (Number(cohort.seatsFilled) >= Number(cohort.seatLimit)) return 'full';
+
+  // Within date range → open for enrollment
+  if (start && end && start <= now && now <= end) return 'open';
+
+  // Before start date → upcoming/active
+  return 'active';
+};
+
+const syncCohortStatus = async (cohort) => {
+  const newStatus = computeSyncStatus(cohort);
+
+  if (cohort.syncStatus !== newStatus) {
+    await cohortRepository.update(cohort, { syncStatus: newStatus });
+    cohort.syncStatus = newStatus; // keep local reference fresh
+  }
+
+  return newStatus;
+};
+
 const syncCohortPrograms = async (cohort, programsPayload, seatLimit) => {
-  if (!programsPayload) return;
+  if (!programsPayload) return 0;
 
   const { Program, CohortProgram } = require('../models');
 
   if (programsPayload.length === 0) {
     await CohortProgram.destroy({ where: { cohortId: cohort.id } });
-    return;
+    return 0;
   }
 
   const allocatedSeatsBase = seatLimit || 0;
@@ -132,6 +166,8 @@ const syncCohortPrograms = async (cohort, programsPayload, seatLimit) => {
       programId: { [require('sequelize').Op.notIn]: resolvedProgramIds }
     }
   });
+
+  return new Set(resolvedProgramIds).size;
 };
 
 const isMostSelected = (filledSeats, mostBookedSeats) =>
@@ -171,6 +207,9 @@ const mapCohortSummary = (cohort, filledSeats = 0, revenue = 0, mostBookedSeats 
     fill_rate: fillRate,
     status,
     refund_policy: cohort.refundPolicy,
+    refund_deferral_policy: parseJSONSafely(cohort.refundDeferralPolicy),
+    time_commitment: cohort.timeCommitment,
+    program_overview: cohort.programOverview,
     leave_with: parseJSONSafely(cohort.leaveWith),
     live_sessions_text: cohort.liveSessionsText,
     workshops_text: cohort.workshopsText,
@@ -188,6 +227,8 @@ const mapCohortSummary = (cohort, filledSeats = 0, revenue = 0, mostBookedSeats 
     })) : [],
     has_multi_program: Boolean(cohort.hasMultiProgram),
     is_active: Boolean(cohort.isActive),
+    is_draft: Boolean(cohort.isDraft),
+    sync_status: cohort.syncStatus,
     mostSelected: isMostSelected(filledSeats, mostBookedSeats),
     revenue,
     created_at: cohort.createdAt,
@@ -223,6 +264,9 @@ class CohortService {
         ),
         status: cohort.status,
         refund_policy: cohort.refundPolicy,
+        refund_deferral_policy: parseJSONSafely(cohort.refundDeferralPolicy),
+        time_commitment: cohort.timeCommitment,
+        program_overview: cohort.programOverview,
         leave_with: parseJSONSafely(cohort.leaveWith),
         live_sessions_text: cohort.liveSessionsText,
         workshops_text: cohort.workshopsText,
@@ -240,6 +284,8 @@ class CohortService {
         })) : [],
         has_multi_program: Boolean(cohort.hasMultiProgram),
         is_active: Boolean(cohort.isActive),
+        is_draft: Boolean(cohort.isDraft),
+        sync_status: cohort.syncStatus,
         mostSelected: isMostSelected(cohort.seatsFilled, mostBookedSeats),
         is_enrollment_open:
           Boolean(cohort.isActive) &&
@@ -272,14 +318,16 @@ class CohortService {
       seat_limit: seatLimit,
       seats_filled: seatsFilled,
       status: cohort.status,
-      is_active: Boolean(cohort.isActive)
+      is_active: Boolean(cohort.isActive),
+      is_draft: Boolean(cohort.isDraft)
     };
   }
 
   async getCohorts(query = {}) {
     const { page, limit, offset } = getPagination(query.page, query.limit);
     const filters = {
-      isActive: query.is_active
+      isActive: query.is_active,
+      isDraft: query.is_draft
     };
 
     const [{ rows, count }, mostBookedSeats] = await Promise.all([
@@ -317,6 +365,9 @@ class CohortService {
       price: payload.price,
       seatLimit: payload.seat_limit,
       refundPolicy: payload.refund_policy,
+      refundDeferralPolicy: payload.refund_deferral_policy,
+      timeCommitment: payload.time_commitment,
+      programOverview: payload.program_overview,
       leaveWith: payload.leave_with,
       liveSessionsText: payload.live_sessions_text,
       workshopsText: payload.workshops_text,
@@ -324,14 +375,20 @@ class CohortService {
       investmentTiers: payload.investment_tiers,
       scarcityText: payload.scarcity_text,
       displayPrice: payload.display_price,
+      isDraft: Boolean(payload.is_draft),
       status: 'active',
-      hasMultiProgram: payload.programs && payload.programs.length >= 2,
+      hasMultiProgram: payload.programs ? payload.programs.length >= 0 : false,
       ...(payload.is_active !== undefined && { isActive: payload.is_active })
     });
 
-    if (payload.programs) {
-      await syncCohortPrograms(cohort, payload.programs, payload.seat_limit);
+    if (payload.programs !== undefined) {
+      const linkedProgramCount = await syncCohortPrograms(cohort, payload.programs, payload.seat_limit);
+      await cohortRepository.update(cohort, { hasMultiProgram: linkedProgramCount >= 0 });
     }
+
+    // Refresh cohort with latest data before computing status
+    const fresh = await cohortRepository.findById(cohort.id);
+    await syncCohortStatus(fresh);
 
     return this.getCohortById(cohort.id);
   }
@@ -364,6 +421,11 @@ class CohortService {
       ...(payload.price !== undefined && { price: payload.price }),
       ...(payload.seat_limit !== undefined && { seatLimit: payload.seat_limit }),
       ...(payload.refund_policy !== undefined && { refundPolicy: payload.refund_policy }),
+      ...(payload.refund_deferral_policy !== undefined && {
+        refundDeferralPolicy: payload.refund_deferral_policy
+      }),
+      ...(payload.time_commitment !== undefined && { timeCommitment: payload.time_commitment }),
+      ...(payload.program_overview !== undefined && { programOverview: payload.program_overview }),
       ...(payload.leave_with !== undefined && { leaveWith: payload.leave_with }),
       ...(payload.live_sessions_text !== undefined && { liveSessionsText: payload.live_sessions_text }),
       ...(payload.workshops_text !== undefined && { workshopsText: payload.workshops_text }),
@@ -372,26 +434,21 @@ class CohortService {
       ...(payload.scarcity_text !== undefined && { scarcityText: payload.scarcity_text }),
       ...(payload.display_price !== undefined && { displayPrice: payload.display_price }),
       ...(payload.status !== undefined && { status: payload.status }),
-      ...(payload.programs !== undefined && { hasMultiProgram: payload.programs.length >= 2 }),
-      ...(payload.is_active !== undefined && { isActive: payload.is_active })
+      ...(payload.programs !== undefined && { hasMultiProgram: payload.programs.length > 0 }),
+      ...(payload.is_active !== undefined && { isActive: payload.is_active }),
+      ...(payload.is_draft !== undefined && { isDraft: payload.is_draft })
     };
 
     const updated = await cohortRepository.update(cohort, updatedPayload);
 
     if (payload.programs !== undefined) {
-      await syncCohortPrograms(updated, payload.programs, updated.seatLimit);
+      const linkedProgramCount = await syncCohortPrograms(updated, payload.programs, updated.seatLimit);
+      await cohortRepository.update(updated, { hasMultiProgram: linkedProgramCount > 0 });
     }
 
-    const status =
-      updated.status === 'closed'
-        ? 'closed'
-        : filledSeats >= updated.seatLimit
-          ? 'full'
-          : updated.status;
-
-    if (status !== updated.status) {
-      await cohortRepository.update(updated, { status });
-    }
+    // Re-fetch to get latest seatsFilled, isDraft, dates before sync
+    const fresh = await cohortRepository.findById(id);
+    await syncCohortStatus(fresh);
 
     return this.getCohortById(id);
   }
@@ -421,6 +478,9 @@ class CohortService {
     await cohortRepository.update(cohort, {
       isActive: payload.is_active
     });
+
+    const fresh = await cohortRepository.findById(id);
+    await syncCohortStatus(fresh);
 
     return this.getCohortById(id);
   }
@@ -471,4 +531,7 @@ class CohortService {
   }
 }
 
-module.exports = new CohortService();
+const cohortServiceInstance = new CohortService();
+
+module.exports = cohortServiceInstance;
+module.exports.syncCohortStatus = syncCohortStatus;
