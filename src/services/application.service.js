@@ -272,12 +272,8 @@ class ApplicationService {
       payload.cohort_id
     );
 
-    //get cohort sync_status to check if the cohort is closed for accepting applications
-    const cohortData = await cohortRepository.findOne({
-        where: { id: payload.cohort_id },
-        select: { sync_status: true }
-    });
-
+    //get cohort details for response
+     const cohortData =  await cohortRepository.findById(payload.cohort_id)
 
      if(cohortData.sync_status === 'closed' || !cohortData.isActive )
      {
