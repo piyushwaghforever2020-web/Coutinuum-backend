@@ -12,6 +12,17 @@ const {
 const ApiError = require('../utils/apiError');
 const { HTTP_STATUS } = require('../constants/app.constants');
 
+const getCohortStatusForSeatCount = (cohort, seatsFilled) =>
+  cohort.status === 'closed'
+    ? 'closed'
+    : Number(seatsFilled) >= Number(cohort.seatLimit)
+      ? 'full'
+      : 'active';
+
+const isProgramFullForSeatCount = (programMapping, seatsFilled) =>
+  Number(programMapping.allocatedSeats) > 0 &&
+  Number(seatsFilled) >= Number(programMapping.allocatedSeats);
+
 const mapParticipantSummary = (participant) => ({
   id: participant.id,
   name: participant.name,
@@ -152,20 +163,47 @@ class ParticipantService {
       const seatsFilled = await participantRepository.countEnrolledByCohort(participant.cohortId, {
         transaction
       });
+      const cohortStatus = getCohortStatusForSeatCount(cohort, seatsFilled);
 
       await cohortRepository.update(
         cohort,
         {
           seatsFilled,
-          status:
-            cohort.status === 'closed'
-              ? 'closed'
-              : seatsFilled >= cohort.seatLimit
-                ? 'full'
-                : 'active'
+          status: cohortStatus
         },
         { transaction }
       );
+
+      if (participant.programId) {
+        const programMapping = await cohortRepository.findProgramMapping(
+          participant.cohortId,
+          participant.programId,
+          {
+            transaction,
+            lock: {
+              level: transaction.LOCK.UPDATE,
+              of: sequelize.models.CohortProgram
+            }
+          }
+        );
+
+        if (programMapping) {
+          const programSeatsFilled = await participantRepository.countEnrolledByCohortAndProgram(
+            participant.cohortId,
+            participant.programId,
+            { transaction }
+          );
+
+          await cohortRepository.updateProgramMapping(
+            programMapping,
+            {
+              seatsFilled: programSeatsFilled,
+              isFull: isProgramFullForSeatCount(programMapping, programSeatsFilled)
+            },
+            { transaction }
+          );
+        }
+      }
     });
 
     return this.getParticipantById(id);

@@ -259,6 +259,17 @@ class ParticipantRepository {
     });
   }
 
+  async countEnrolledByCohortAndProgram(cohortId, programId, options = {}) {
+    return Participant.count({
+      where: {
+        cohortId,
+        programId,
+        paymentStatus: 'paid'
+      },
+      ...options
+    });
+  }
+
   async findByCohort(cohortId) {
     return Participant.findAll({
       where: {

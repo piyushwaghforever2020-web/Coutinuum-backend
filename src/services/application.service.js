@@ -130,6 +130,110 @@ const ensureProgramBelongsToCohort = (cohort, programId) => {
   }
 };
 
+const getCohortStatusForSeatCount = (cohort, seatsFilled) =>
+  cohort.status === 'closed'
+    ? 'closed'
+    : Number(seatsFilled) >= Number(cohort.seatLimit)
+      ? 'full'
+      : 'active';
+
+const isProgramFullForSeatCount = (programMapping, seatsFilled) =>
+  Number(programMapping.allocatedSeats) > 0 &&
+  Number(seatsFilled) >= Number(programMapping.allocatedSeats);
+
+const ensureProgramSeatAvailableForPayment = async (participant, transaction) => {
+  if (!participant.programId) {
+    return null;
+  }
+
+  const programMapping = await cohortRepository.findProgramMapping(
+    participant.cohortId,
+    participant.programId,
+    {
+      transaction,
+      lock: {
+        level: transaction.LOCK.UPDATE,
+        of: sequelize.models.CohortProgram
+      }
+    }
+  );
+
+  if (!programMapping) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      'Selected program is not available for this cohort.'
+    );
+  }
+
+  const paidProgramSeats = await participantRepository.countEnrolledByCohortAndProgram(
+    participant.cohortId,
+    participant.programId,
+    { transaction }
+  );
+
+  if (isProgramFullForSeatCount(programMapping, paidProgramSeats)) {
+    throw new ApiError(HTTP_STATUS.CONFLICT, 'No seats available for this program.');
+  }
+
+  return programMapping;
+};
+
+const syncPaidSeatCounts = async ({ cohort, participant, programMapping, transaction }) => {
+  const seatsFilled = await participantRepository.countEnrolledByCohort(cohort.id, {
+    transaction
+  });
+  const cohortStatus = getCohortStatusForSeatCount(cohort, seatsFilled);
+
+  await cohortRepository.update(
+    cohort,
+    {
+      seatsFilled,
+      status: cohortStatus
+    },
+    { transaction }
+  );
+
+  let programSeatsFilled = null;
+  let programIsFull = null;
+
+  if (participant.programId) {
+    const mapping =
+      programMapping ||
+      (await cohortRepository.findProgramMapping(cohort.id, participant.programId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.CohortProgram
+        }
+      }));
+
+    if (mapping) {
+      programSeatsFilled = await participantRepository.countEnrolledByCohortAndProgram(
+        cohort.id,
+        participant.programId,
+        { transaction }
+      );
+      programIsFull = isProgramFullForSeatCount(mapping, programSeatsFilled);
+
+      await cohortRepository.updateProgramMapping(
+        mapping,
+        {
+          seatsFilled: programSeatsFilled,
+          isFull: programIsFull
+        },
+        { transaction }
+      );
+    }
+  }
+
+  return {
+    seatsFilled,
+    cohortStatus,
+    programSeatsFilled,
+    programIsFull
+  };
+};
+
 const findOpenStripeSession = async (payment) => {
   if (!payment?.stripeCheckoutSessionId || payment.status !== 'pending') {
     return null;
@@ -304,6 +408,17 @@ class ApplicationService {
 
       ensureCohortAvailableForPayment(lockedCohort);
 
+      const paidCohortSeats = await participantRepository.countEnrolledByCohort(
+        lockedCohort.id,
+        { transaction }
+      );
+
+      if (paidCohortSeats >= Number(lockedCohort.seatLimit)) {
+        throw new ApiError(HTTP_STATUS.CONFLICT, 'No seats available for this cohort.');
+      }
+
+      await ensureProgramSeatAvailableForPayment(lockedParticipant, transaction);
+
       const currentPayment = await paymentRepository.findLatestByParticipantAndCohort(
         lockedParticipant.id,
         lockedCohort.id,
@@ -427,41 +542,89 @@ class ApplicationService {
       }
 
       if (payment?.status === 'paid' && participant.paymentStatus === 'paid') {
+        const programMapping = participant.programId
+          ? await cohortRepository.findProgramMapping(cohortId, participant.programId, {
+              transaction,
+              lock: {
+                level: transaction.LOCK.UPDATE,
+                of: sequelize.models.CohortProgram
+              }
+            })
+          : null;
+        const seatSync = await syncPaidSeatCounts({
+          cohort,
+          participant,
+          programMapping,
+          transaction
+        });
+
         console.log('[Stripe Webhook] Duplicate event detected from payment status.', {
           checkout_session_id: sessionData.id,
           participant_id: participantId,
           cohort_id: cohortId,
-          payment_id: payment.id
+          payment_id: payment.id,
+          seats_filled: seatSync.seatsFilled,
+          program_seats_filled: seatSync.programSeatsFilled
         });
 
         return {
           processed: false,
-          duplicate: true
+          duplicate: true,
+          synced_seat_counts: true
         };
       }
 
       if (participant.paymentStatus === 'paid') {
+        const programMapping = participant.programId
+          ? await cohortRepository.findProgramMapping(cohortId, participant.programId, {
+              transaction,
+              lock: {
+                level: transaction.LOCK.UPDATE,
+                of: sequelize.models.CohortProgram
+              }
+            })
+          : null;
+        const seatSync = await syncPaidSeatCounts({
+          cohort,
+          participant,
+          programMapping,
+          transaction
+        });
+
         console.log('[Stripe Webhook] Duplicate event detected from participant state.', {
           checkout_session_id: sessionData.id,
           participant_id: participantId,
-          cohort_id: cohortId
+          cohort_id: cohortId,
+          seats_filled: seatSync.seatsFilled,
+          program_seats_filled: seatSync.programSeatsFilled
         });
 
         return {
           processed: false,
-          duplicate: true
+          duplicate: true,
+          synced_seat_counts: true
         };
       }
 
-      if (!cohort.isActive || cohort.status === 'closed' || cohort.seatsFilled >= cohort.seatLimit) {
+      if (!cohort.isActive || cohort.status === 'closed') {
         throw new ApiError(
           HTTP_STATUS.CONFLICT,
           'Payment received but no seats are currently available for this cohort.'
         );
       }
 
-      const nextSeatsFilled = Number(cohort.seatsFilled) + 1;
-      const nextStatus = nextSeatsFilled >= Number(cohort.seatLimit) ? 'full' : 'active';
+      const paidCohortSeats = await participantRepository.countEnrolledByCohort(cohortId, {
+        transaction
+      });
+
+      if (paidCohortSeats >= Number(cohort.seatLimit)) {
+        throw new ApiError(
+          HTTP_STATUS.CONFLICT,
+          'Payment received but no seats are currently available for this cohort.'
+        );
+      }
+
+      const programMapping = await ensureProgramSeatAvailableForPayment(participant, transaction);
       const accessPassword = generateParticipantAccessPassword();
       const passwordHash = await bcrypt.hash(accessPassword, env.bcryptSaltRounds);
       const passwordGeneratedAt = new Date();
@@ -508,14 +671,12 @@ class ApplicationService {
         { transaction }
       );
 
-      await cohortRepository.update(
+      const seatSync = await syncPaidSeatCounts({
         cohort,
-        {
-          seatsFilled: nextSeatsFilled,
-          status: cohort.status === 'closed' ? 'closed' : nextStatus
-        },
-        { transaction }
-      );
+        participant,
+        programMapping,
+        transaction
+      });
 
       //---- for sending email confirmation -------------//
       confirmationEmailPayload = {
@@ -530,9 +691,12 @@ class ApplicationService {
         checkout_session_id: sessionData.id,
         participant_id: participantId,
         cohort_id: cohortId,
+        program_id: participant.programId || null,
         payment_id: payment.id,
-        seats_filled: nextSeatsFilled,
-        cohort_status: cohort.status === 'closed' ? 'closed' : nextStatus
+        seats_filled: seatSync.seatsFilled,
+        cohort_status: seatSync.cohortStatus,
+        program_seats_filled: seatSync.programSeatsFilled,
+        program_is_full: seatSync.programIsFull
       });
 
       return {

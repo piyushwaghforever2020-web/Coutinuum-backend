@@ -50,6 +50,8 @@ class PaymentRepository {
           required: Boolean(participantWhere),
           attributes: [
             'id',
+            'cohortId',
+            'programId',
             'name',
             'email',
             'phone',
@@ -81,6 +83,8 @@ class PaymentRepository {
           as: 'participant',
           attributes: [
             'id',
+            'cohortId',
+            'programId',
             'name',
             'email',
             'phone',
@@ -116,7 +120,7 @@ class PaymentRepository {
         {
           model: Participant,
           as: 'participant',
-          attributes: ['id', 'name', 'email', 'paymentStatus', 'registrationStatus']
+          attributes: ['id', 'cohortId', 'programId', 'name', 'email', 'paymentStatus', 'registrationStatus']
         },
         {
           model: Cohort,
@@ -140,7 +144,7 @@ class PaymentRepository {
         {
           model: Participant,
           as: 'participant',
-          attributes: ['id', 'name', 'email', 'paymentStatus', 'registrationStatus']
+          attributes: ['id', 'cohortId', 'programId', 'name', 'email', 'paymentStatus', 'registrationStatus']
         },
         {
           model: Cohort,
@@ -161,7 +165,7 @@ class PaymentRepository {
         {
           model: Participant,
           as: 'participant',
-          attributes: ['id', 'name', 'email', 'paymentStatus', 'registrationStatus']
+          attributes: ['id', 'cohortId', 'programId', 'name', 'email', 'paymentStatus', 'registrationStatus']
         },
         {
           model: Cohort,

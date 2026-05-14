@@ -1,5 +1,5 @@
 const { fn, col, Op, where } = require('sequelize');
-const { Cohort, Participant, Payment, Program } = require('../models');
+const { Cohort, Participant, Payment, Program, CohortProgram } = require('../models');
 
 class CohortRepository {
   buildFilters({ isActive, isDraft } = {}) {
@@ -83,6 +83,20 @@ class CohortRepository {
   }
 
   async update(instance, data, options = {}) {
+    return instance.update(data, options);
+  }
+
+  async findProgramMapping(cohortId, programId, options = {}) {
+    return CohortProgram.findOne({
+      where: {
+        cohortId,
+        programId
+      },
+      ...options
+    });
+  }
+
+  async updateProgramMapping(instance, data, options = {}) {
     return instance.update(data, options);
   }
 
