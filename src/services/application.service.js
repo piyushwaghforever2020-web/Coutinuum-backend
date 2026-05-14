@@ -272,6 +272,28 @@ class ApplicationService {
       payload.cohort_id
     );
 
+    //get cohort sync_status to check if the cohort is closed for accepting applications
+    const cohortData = await cohortRepository.findOne({
+        where: { id: payload.cohort_id },
+        select: { sync_status: true }
+    });
+
+
+     if(cohortData.sync_status === 'closed' || !cohortData.isActive )
+     {
+       throw new ApiError(
+        HTTP_STATUS.BAD_REQUEST,
+        'Closed cohort cannot accept new applications.'
+      );
+     }
+     else if(cohortData.status === 'full'){
+      throw new ApiError(
+        HTTP_STATUS.BAD_REQUEST,
+        'Cohort is full and cannot accept new applications.'
+      )
+     }
+     
+     
     if (!existingParticipant) {
       const participant = await participantRepository.create({
         name: payload.name,
