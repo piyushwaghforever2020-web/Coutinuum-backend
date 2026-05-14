@@ -33,8 +33,8 @@ const priceField = Joi.custom((value, helpers) => {
 });
 
 const refundDeferralPolicyItem = Joi.object({
-  program: Joi.string().trim().max(255).required(),
-  price_per_seat: Joi.string().trim().max(255).required()
+  program: Joi.string().trim().max(255).allow('', null).optional(),
+  price_per_seat: Joi.string().trim().max(255).allow('', null).optional()
 });
 
 // const programOverviewItem = Joi.object({
@@ -45,7 +45,7 @@ const refundDeferralPolicyItem = Joi.object({
 
 const cohortId = {
   params: Joi.object({
-    id: Joi.number().integer().positive().required()
+    id: Joi.number().integer().positive().optional()
   })
 };
 
@@ -62,11 +62,11 @@ const createCohort = {
   body: Joi.object({
     name: Joi.string().trim().max(150).required(),
     description: Joi.string().trim().allow('', null),
-    start_date: Joi.date().iso().required(),
+    start_date: Joi.date().iso().optional(),
     end_date: Joi.date().iso().min(Joi.ref('start_date')).allow(null),
     price: priceField.optional(),
     is_draft: Joi.boolean().optional(),
-    seat_limit: Joi.number().integer().min(1).required(),
+    seat_limit: Joi.number().integer().min(1).optional(),
     refund_policy: Joi.string().trim().allow('', null),
     refund_deferral_policy: Joi.array().items(refundDeferralPolicyItem).allow(null),
     time_commitment: Joi.string().trim().max(500).allow('', null),
@@ -100,7 +100,7 @@ const updateCohort = {
     start_date: Joi.date().iso(),
     end_date: Joi.date().iso().allow(null),
     price: priceField,
-    seat_limit: Joi.number().integer().min(1),
+    seat_limit: Joi.number().integer().min(1).optional(),
     refund_policy: Joi.string().trim().allow('', null),
     refund_deferral_policy: Joi.array().items(refundDeferralPolicyItem).allow(null),
     time_commitment: Joi.string().trim().max(500).allow('', null),
