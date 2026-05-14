@@ -28,7 +28,7 @@ class StripeService {
 
     return stripe.checkout.sessions.create({
       mode: 'payment',
-      success_url: `${payload.successUrl}${payload.cohortId}`,
+      success_url: payload.successUrl,
       cancel_url: payload.cancelUrl,
       customer_email: payload.customerEmail,
       metadata: {
