@@ -89,6 +89,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         field: 'leave_with'
       },
+      format: {
+        type: DataTypes.STRING(1000),
+        allowNull: true,
+        field: 'format'
+      },
       liveSessionsText: {
         type: DataTypes.STRING(500),
         allowNull: true,
