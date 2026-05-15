@@ -12,5 +12,6 @@ router.get(
 );
 
 router.get('/cohorts', cohortController.getPublicCohorts);
+router.get('/cohorts/:id', cohortController.getCohortById);
 
 module.exports = router;
