@@ -179,7 +179,7 @@ class EnquiryService {
 
     //send welcome email to new subscriber
    await sendMail({
-     to: subscription.email,
+     to: [{ email: subscription.email, name: subscription.name }],
      subject: "Welcome to Continuum Transformation",
      html: buildEmailCard({
        title: "Welcome to Continuum Transformation",
