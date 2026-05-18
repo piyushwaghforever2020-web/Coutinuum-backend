@@ -72,58 +72,93 @@ const differenceInWeeks = (startDate, endDate) => {
   return Math.floor((endDate.getTime() - startDate.getTime()) / millisecondsPerWeek);
 };
 
+// const buildCohortFillProgress = (cohort, paidParticipants) => {
+//   const labels = Array.from({ length: CHART_WEEKS }, (_, index) => `W${index + 1}`);
+
+//   if (!cohort) {
+//     return {
+//       cohort_id: null,
+//       cohort_name: null,
+//       labels,
+//       series: labels.map(() => 0),
+//       seat_limit: 0,
+//       seats_filled: 0,
+//       fill_rate: 0
+//     };
+//   }
+
+//   const chartStartDate = startOfDay(cohort.createdAt || cohort.startDate || new Date());
+//   const weeklyCounts = Array.from({ length: CHART_WEEKS }, () => 0);
+
+//   for (const participant of paidParticipants) {
+//     const participantDate = startOfDay(participant.createdAt);
+//     const weekIndex = Math.max(
+//       0,
+//       Math.min(CHART_WEEKS - 1, differenceInWeeks(chartStartDate, participantDate))
+//     );
+
+//     weeklyCounts[weekIndex] += 1;
+//   }
+
+//   const series = weeklyCounts.reduce((accumulator, count, index) => {
+//     const previousValue = index > 0 ? accumulator[index - 1] : 0;
+//     accumulator.push(previousValue + count);
+//     return accumulator;
+//   }, []);
+
+//   const actualSeatsFilled = Number(cohort.seatsFilled || 0);
+//   const lastSeriesValue = series[series.length - 1] || 0;
+
+//   if (actualSeatsFilled > lastSeriesValue && series.length) {
+//     series[series.length - 1] = actualSeatsFilled;
+//   }
+
+//   const seatLimit = Number(cohort.seatLimit || 0);
+//   const fillRate = toPercentage(actualSeatsFilled, seatLimit);
+
+//   return {
+//     cohort_id: cohort.id,
+//     cohort_name: cohort.name,
+//     labels,
+//     series,
+//     seat_limit: seatLimit,
+//     seats_filled: actualSeatsFilled,
+//     fill_rate: fillRate
+//   };
+// };
+
 const buildCohortFillProgress = (cohort, paidParticipants) => {
-  const labels = Array.from({ length: CHART_WEEKS }, (_, index) => `W${index + 1}`);
+  const labels = Array.from(
+    { length: CHART_WEEKS },
+    (_, index) => `W${index + 1}`
+  );
 
-  if (!cohort) {
-    return {
-      cohort_id: null,
-      cohort_name: null,
-      labels,
-      series: labels.map(() => 0),
-      seat_limit: 0,
-      seats_filled: 0,
-      fill_rate: 0
-    };
-  }
+  const weeklyCounts = Array(CHART_WEEKS).fill(0);
 
-  const chartStartDate = startOfDay(cohort.createdAt || cohort.startDate || new Date());
-  const weeklyCounts = Array.from({ length: CHART_WEEKS }, () => 0);
+  const today = startOfDay(new Date());
 
   for (const participant of paidParticipants) {
     const participantDate = startOfDay(participant.createdAt);
-    const weekIndex = Math.max(
-      0,
-      Math.min(CHART_WEEKS - 1, differenceInWeeks(chartStartDate, participantDate))
-    );
 
-    weeklyCounts[weekIndex] += 1;
+    const weeksAgo = differenceInWeeks(participantDate, today);
+
+    if (weeksAgo >= 0 && weeksAgo < CHART_WEEKS) {
+      const index = CHART_WEEKS - 1 - weeksAgo;
+      weeklyCounts[index] += 1;
+    }
   }
 
-  const series = weeklyCounts.reduce((accumulator, count, index) => {
-    const previousValue = index > 0 ? accumulator[index - 1] : 0;
-    accumulator.push(previousValue + count);
-    return accumulator;
-  }, []);
-
-  const actualSeatsFilled = Number(cohort.seatsFilled || 0);
-  const lastSeriesValue = series[series.length - 1] || 0;
-
-  if (actualSeatsFilled > lastSeriesValue && series.length) {
-    series[series.length - 1] = actualSeatsFilled;
-  }
-
-  const seatLimit = Number(cohort.seatLimit || 0);
-  const fillRate = toPercentage(actualSeatsFilled, seatLimit);
+  const seatLimit = Number(cohort?.seatLimit || 0);
+  const actualSeatsFilled = Number(cohort?.seatsFilled || 0);
 
   return {
-    cohort_id: cohort.id,
-    cohort_name: cohort.name,
+    cohort_id: cohort?.id || null,
+    cohort_name: cohort?.name || null,
     labels,
-    series,
+    series: weeklyCounts,
     seat_limit: seatLimit,
     seats_filled: actualSeatsFilled,
-    fill_rate: fillRate
+    fill_rate: toPercentage(actualSeatsFilled, seatLimit)
   };
 };
 
