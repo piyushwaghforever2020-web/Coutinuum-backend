@@ -1,6 +1,8 @@
 const { sequelize } = require('../models');
 const enquiryRepository = require('../repositories/enquiry.repository');
 const { buildPaginationMeta, getPagination } = require('../utils/pagination');
+const sendMail = require('../utils/sendMail');
+const { buildEmailCard, getEmailLogoAttachments, escapeHtml } = require('../utils/emailTemplate');
 
 const normalizeEmail = (email) => String(email).trim().toLowerCase();
 
@@ -173,6 +175,22 @@ class EnquiryService {
       email: normalizeEmail(payload.email),
       sendNewPodcastEpisodes: Boolean(payload.send_new_podcast_episodes)
     });
+
+    //send welcome email to new subscriber
+   await sendMail({
+     to: subscription.email,
+     subject: "Welcome to Continuum Transformation",
+     html: buildEmailCard({
+       title: "Welcome to Continuum Transformation",
+       greeting: `Hi ${escapeHtml(subscription.name || "there")},`,
+       messageHtml: ` Thank you for joining our email list 🎉<br /><br /> You’ll now receive: <ul style="padding-left:18px;margin:10px 0;"> <li>Leadership insights and tips</li> <li>New podcast episode updates</li> <li>Tools and resources from Continuum Transformation</li> </ul> We’re excited to have you with us. `,
+       buttonLabel: "Visit Website",
+       buttonUrl: process.env.FRONTEND_URL || 'https://continuumtransformation.com',
+       footer: "No spam. Unsubscribe anytime.",
+       iconType: "success",
+     }),
+     attachments: getEmailLogoAttachments(),
+   });
 
     return mapEmailListSubscription(subscription);
   }
