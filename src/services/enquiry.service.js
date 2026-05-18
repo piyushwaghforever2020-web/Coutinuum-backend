@@ -177,6 +177,7 @@ class EnquiryService {
       sendNewPodcastEpisodes: Boolean(payload.send_new_podcast_episodes)
     });
 
+    console.log('subscription:', subscription);
     //send welcome email to new subscriber
    await sendMail({
      to: [{ email: subscription.email, name: subscription.name }],

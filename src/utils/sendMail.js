@@ -3,62 +3,10 @@ const ApiError = require('./apiError');
 const { HTTP_STATUS } = require('../constants/app.constants');
 const nodemailer = require('nodemailer');
 
-const RECIPIENT_TYPES = new Set(['to', 'cc', 'bcc']);
-
-const normalizeRecipient = (recipient, fallbackType = 'to') => {
-  if (typeof recipient === 'string') {
-    return recipient
-      .split(/[;,]/)
-      .map((email) => ({
-        email: email.trim(),
-        type: fallbackType
-      }));
-  }
-
-  const type = String(recipient?.type || fallbackType).toLowerCase();
-
-  return {
-    email:
-      typeof recipient?.email === 'string'
-        ? recipient.email.trim()
-        : typeof recipient?.address === 'string'
-          ? recipient.address.trim()
-          : '',
-    name: typeof recipient?.name === 'string' ? recipient.name.trim() : undefined,
-    type: RECIPIENT_TYPES.has(type) ? type : fallbackType
-  };
-};
-
-const normalizeRecipientList = (input, fallbackType = 'to') => {
-  if (input === undefined || input === null) return [];
-
-  const items = Array.isArray(input) ? input : [input];
-
-  return items
-    .flatMap((recipient) => normalizeRecipient(recipient, fallbackType))
-    .filter((recipient) => recipient.email.length > 0);
-};
-
-const formatRecipient = (recipient) => {
-  if (!recipient.name) return recipient.email;
-
-  return `"${recipient.name.replace(/"/g, '\\"')}" <${recipient.email}>`;
-};
-
-const groupRecipients = (payload) => {
-  const primaryRecipients = payload?.to ?? payload?.recipients ?? payload?.email;
-  const recipients = [
-    ...normalizeRecipientList(primaryRecipients, 'to'),
-    ...normalizeRecipientList(payload?.cc, 'cc'),
-    ...normalizeRecipientList(payload?.bcc, 'bcc')
-  ];
-
-  return {
-    to: recipients.filter((recipient) => recipient.type === 'to'),
-    cc: recipients.filter((recipient) => recipient.type === 'cc'),
-    bcc: recipients.filter((recipient) => recipient.type === 'bcc')
-  };
-};
+const normalizeRecipient = (recipient) => ({
+  email: recipient.email,
+  name: recipient.name
+});
 
 // const mapResult = (result) => ({
 //   email: result.email,
@@ -199,13 +147,12 @@ const groupRecipients = (payload) => {
 
 //----------- SEND MAIL TO SMTP ---------------------
 
-const sendMail = async (payload = {}) => {
-  const recipientGroups = groupRecipients(payload);
-  const recipients = [
-    ...recipientGroups.to,
-    ...recipientGroups.cc,
-    ...recipientGroups.bcc
-  ];
+const sendMail = async (payload) => {
+  const recipients = Array.isArray(payload?.to)
+    ? payload.to
+        .map(normalizeRecipient)
+        .filter((recipient) => typeof recipient.email === 'string' && recipient.email.trim().length > 0)
+    : [];
 
   if (!recipients.length) {
     throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'At least one valid recipient email is required.');
@@ -251,13 +198,12 @@ const sendMail = async (payload = {}) => {
   try {
     const info = await transporter.sendMail({
       from: payload.from_name ? `"${payload.from_name}" <${fromEmail}>` : fromEmail,
-      ...(recipientGroups.to.length ? { to: recipientGroups.to.map(formatRecipient) } : {}),
-      ...(recipientGroups.cc.length ? { cc: recipientGroups.cc.map(formatRecipient) } : {}),
-      ...(recipientGroups.bcc.length ? { bcc: recipientGroups.bcc.map(formatRecipient) } : {}),
+      to: recipients.map((recipient) =>
+        recipient.name ? `"${recipient.name}" <${recipient.email}>` : recipient.email
+      ),
       subject: payload.subject,
       html: payload.html,
       text: payload.text,
-      ...(payload.reply_to ? { replyTo: payload.reply_to } : {}),
       ...(Array.isArray(payload.attachments) && payload.attachments.length
         ? { attachments: payload.attachments }
         : {})
