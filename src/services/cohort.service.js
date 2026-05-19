@@ -217,10 +217,7 @@ class CohortService {
         price: cohort.price,
         seat_limit: cohort.seatLimit,
         seats_filled: Number(cohort.seatsFilled),
-        seats_remaining: Math.max(
-          Number(cohort.seatLimit) - Number(cohort.seatsFilled),
-          0
-        ),
+        seats_remaining: Math.max(Number(cohort.seatLimit) - Number(cohort.seatsFilled),0),
         status: cohort.status,
         refund_policy: cohort.refundPolicy,
         leave_with: parseJSONSafely(cohort.leaveWith),
