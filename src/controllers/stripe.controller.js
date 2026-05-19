@@ -31,6 +31,13 @@ const handleWebhook = asyncHandler(async (req, res) => {
       result
     });
   } 
+  else if (event.type === STRIPE_EVENTS.PAYMENT_INTENT_SUCCEEDED) {
+    const result = await applicationService.processSucceededPaymentIntent(event.data.object);
+    console.log('[Stripe Webhook] Payment intent success processed.', {
+      event_id: event.id,
+      result
+    });
+  }
   else if (event.type === STRIPE_EVENTS.CHECKOUT_SESSION_ASYNC_PAYMENT_FAILED) {
     const result = await applicationService.processFailedCheckoutSession(event.data.object);
     console.log('[Stripe Webhook] Failed checkout session processed.', {

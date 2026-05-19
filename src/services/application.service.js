@@ -770,6 +770,33 @@ class ApplicationService {
     return this.processFailedCheckoutSession(session);
   }
 
+  async processSucceededPaymentIntent(paymentIntentData) {
+    const paymentIntentId = paymentIntentData?.id;
+
+    console.log('[Stripe Webhook] Processing payment_intent.succeeded.', {
+      payment_intent_id: paymentIntentId || null
+    });
+
+    if (!paymentIntentId) {
+      throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'Missing payment intent ID.');
+    }
+
+    const session = await stripeService.retrieveCheckoutSessionByPaymentIntent(paymentIntentId);
+
+    if (!session) {
+      console.warn('[Stripe Webhook] No checkout session found for successful payment intent.', {
+        payment_intent_id: paymentIntentId
+      });
+
+      return {
+        processed: false,
+        reason: 'checkout_session_not_found'
+      };
+    }
+
+    return this.processCompletedCheckoutSession(session);
+  }
+
   //------------- Process failed checkout session -------------//
   async processFailedCheckoutSession(sessionData) {
 
