@@ -36,10 +36,7 @@ module.exports = (sequelize, DataTypes) => {
       seatLimit: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        field: 'seat_limit',
-        validate: {
-          min: 1
-        }
+        field: 'seat_limit'
       },
       seatsFilled: {
         type: DataTypes.INTEGER,
