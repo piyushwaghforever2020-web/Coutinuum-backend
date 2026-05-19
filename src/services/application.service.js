@@ -728,6 +728,11 @@ class ApplicationService {
 
     if (result?.processed) {
       try {
+        console.log('[Stripe Webhook] Sending payment confirmation email.', {
+          participant_id: participantId,
+          cohort_id: cohortId,
+          payment_id: result.payment_id
+        });
         await sendPaymentConfirmationEmail(confirmationEmailPayload);
       } catch (error) {
         console.error(
