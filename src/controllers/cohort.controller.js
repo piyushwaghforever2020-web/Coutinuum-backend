@@ -18,10 +18,17 @@ const getCohorts = asyncHandler(async (req, res) => {
   return sendSuccess(res, 'Cohorts fetched successfully.', data);
 });
 
+// const createCohort = asyncHandler(async (req, res) => {
+//   const data = await cohortService.createCohort(req.body);
+//   return sendSuccess(res, 'Cohort created successfully.', data, HTTP_STATUS.CREATED);
+// });
+
 const createCohort = asyncHandler(async (req, res) => {
+     console.log("req.body",req.body)
   const data = await cohortService.createCohort(req.body);
   return sendSuccess(res, 'Cohort created successfully.', data, HTTP_STATUS.CREATED);
 });
+
 
 const updateCohort = asyncHandler(async (req, res) => {
   const data = await cohortService.updateCohort(req.params.id, req.body);

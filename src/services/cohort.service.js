@@ -217,7 +217,11 @@ const mapCohortSummary = (cohort, filledSeats = 0, revenue = 0, mostBookedSeats 
     cohort_size_text: cohort.cohortSizeText,
     investment_tiers: parseJSONSafely(cohort.investmentTiers),
     scarcity_text: cohort.scarcityText,
-    display_price: cohort.displayPrice,
+    display_price: cohort.displayPrice,       image: cohort.image,
+overview_pdf: cohort.overviewPdf,
+what_leaders_build: cohort.whatLeadersBuild,
+who_its_for: cohort.whoItsFor,
+case_study: cohort.caseStudy,
     programs: cohort.programs ? cohort.programs.map((p) => ({
       program_id: p.id,
       program_name: p.name,
@@ -356,7 +360,47 @@ class CohortService {
     };
   }
 
-  async createCohort(payload) {
+  // async createCohort(payload) {
+  //   validateEndDate(payload.start_date, payload.end_date);
+
+  //   const cohort = await cohortRepository.create({
+  //     name: payload.name,
+  //     description: payload.description,
+  //     startDate: payload.start_date,
+  //     endDate: payload.end_date,
+  //     price: payload.price,
+  //     seatLimit: payload.seat_limit,
+  //     refundPolicy: payload.refund_policy,
+  //     refundDeferralPolicy: payload.refund_deferral_policy,
+  //     timeCommitment: payload.time_commitment,
+  //     programOverview: payload.program_overview,
+  //     leaveWith: payload.leave_with,
+  //     format: payload.format,
+  //     liveSessionsText: payload.live_sessions_text,
+  //     workshopsText: payload.workshops_text,
+  //     cohortSizeText: payload.cohort_size_text,
+  //     investmentTiers: payload.investment_tiers,
+  //     scarcityText: payload.scarcity_text,
+  //     displayPrice: payload.display_price,
+  //     isDraft: Boolean(payload.is_draft),
+  //     status: 'active',
+  //     hasMultiProgram: payload.programs ? payload.programs.length >= 0 : false,
+  //     ...(payload.is_active !== undefined && { isActive: payload.is_active })
+  //   });
+
+  //   if (payload.programs !== undefined) {
+  //     const linkedProgramCount = await syncCohortPrograms(cohort, payload.programs, payload.seat_limit);
+  //     await cohortRepository.update(cohort, { hasMultiProgram: linkedProgramCount >= 0 });
+  //   }
+
+  //   // Refresh cohort with latest data before computing status
+  //   const fresh = await cohortRepository.findById(cohort.id);
+  //   await syncCohortStatus(fresh);
+
+  //   return this.getCohortById(cohort.id);
+  // }
+
+async createCohort(payload) {
     validateEndDate(payload.start_date, payload.end_date);
 
     const cohort = await cohortRepository.create({
@@ -378,6 +422,11 @@ class CohortService {
       investmentTiers: payload.investment_tiers,
       scarcityText: payload.scarcity_text,
       displayPrice: payload.display_price,
+      image: payload.image,
+      whatLeadersBuild: payload.what_leaders_build,
+      whoItsFor: payload.who_its_for,
+      caseStudy: payload.case_study,
+      overviewPdf: payload.overview_pdf,
       isDraft: Boolean(payload.is_draft),
       status: 'active',
       hasMultiProgram: payload.programs ? payload.programs.length >= 0 : false,
@@ -396,7 +445,69 @@ class CohortService {
     return this.getCohortById(cohort.id);
   }
 
-  async updateCohort(id, payload) {
+  // async updateCohort(id, payload) {
+  //   const cohort = await cohortRepository.findById(id);
+
+  //   if (!cohort) {
+  //     throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Cohort not found.');
+  //   }
+
+  //   const filledSeats = Number(cohort.seatsFilled);
+
+  //   if (payload.seat_limit && payload.seat_limit < filledSeats) {
+  //     throw new ApiError(
+  //       HTTP_STATUS.BAD_REQUEST,
+  //       'Seat limit cannot be lower than the number of enrolled participants.'
+  //     );
+  //   }
+
+  //   const resolvedStartDate = payload.start_date !== undefined ? payload.start_date : cohort.startDate;
+  //   const resolvedEndDate = payload.end_date !== undefined ? payload.end_date : cohort.endDate;
+  //   validateEndDate(resolvedStartDate, resolvedEndDate);
+
+  //   const updatedPayload = {
+  //     ...(payload.name !== undefined && { name: payload.name }),
+  //     ...(payload.description !== undefined && { description: payload.description }),
+  //     ...(payload.start_date !== undefined && { startDate: payload.start_date }),
+  //     ...(payload.end_date !== undefined && { endDate: payload.end_date }),
+  //     ...(payload.price !== undefined && { price: payload.price }),
+  //     ...(payload.seat_limit !== undefined && { seatLimit: payload.seat_limit }),
+  //     ...(payload.refund_policy !== undefined && { refundPolicy: payload.refund_policy }),
+  //     ...(payload.refund_deferral_policy !== undefined && {
+  //       refundDeferralPolicy: payload.refund_deferral_policy
+  //     }),
+  //     ...(payload.time_commitment !== undefined && { timeCommitment: payload.time_commitment }),
+  //     ...(payload.program_overview !== undefined && { programOverview: payload.program_overview }),
+  //     ...(payload.leave_with !== undefined && { leaveWith: payload.leave_with }),
+  //     ...(payload.format !== undefined && { format: payload.format }),
+  //     ...(payload.live_sessions_text !== undefined && { liveSessionsText: payload.live_sessions_text }),
+  //     ...(payload.workshops_text !== undefined && { workshopsText: payload.workshops_text }),
+  //     ...(payload.cohort_size_text !== undefined && { cohortSizeText: payload.cohort_size_text }),
+  //     ...(payload.investment_tiers !== undefined && { investmentTiers: payload.investment_tiers }),
+  //     ...(payload.scarcity_text !== undefined && { scarcityText: payload.scarcity_text }),
+  //     ...(payload.display_price !== undefined && { displayPrice: payload.display_price }),
+  //     ...(payload.status !== undefined && { status: payload.status }),
+  //     ...(payload.programs !== undefined && { hasMultiProgram: payload.programs.length > 0 }),
+  //     ...(payload.is_active !== undefined && { isActive: payload.is_active }),
+  //     ...(payload.is_draft !== undefined && { isDraft: payload.is_draft })
+  //   };
+
+  //   const updated = await cohortRepository.update(cohort, updatedPayload);
+
+  //   if (payload.programs !== undefined) {
+  //     const linkedProgramCount = await syncCohortPrograms(updated, payload.programs, updated.seatLimit);
+  //     await cohortRepository.update(updated, { hasMultiProgram: linkedProgramCount > 0 });
+  //   }
+
+  //   // Re-fetch to get latest seatsFilled, isDraft, dates before sync
+  //   const fresh = await cohortRepository.findById(id);
+  //   await syncCohortStatus(fresh);
+
+  //   return this.getCohortById(id);
+  // }
+
+
+async updateCohort(id, payload) {
     const cohort = await cohortRepository.findById(id);
 
     if (!cohort) {
@@ -437,6 +548,11 @@ class CohortService {
       ...(payload.investment_tiers !== undefined && { investmentTiers: payload.investment_tiers }),
       ...(payload.scarcity_text !== undefined && { scarcityText: payload.scarcity_text }),
       ...(payload.display_price !== undefined && { displayPrice: payload.display_price }),
+      ...(payload.image !== undefined && { image: payload.image }),
+      ...(payload.what_leaders_build !== undefined && { whatLeadersBuild: payload.what_leaders_build }),
+      ...(payload.who_its_for !== undefined && { whoItsFor: payload.who_its_for }),
+      ...(payload.case_study !== undefined && { caseStudy: payload.case_study }),
+      ...(payload.overview_pdf !== undefined && { overviewPdf: payload.overview_pdf }),
       ...(payload.status !== undefined && { status: payload.status }),
       ...(payload.programs !== undefined && { hasMultiProgram: payload.programs.length > 0 }),
       ...(payload.is_active !== undefined && { isActive: payload.is_active }),
@@ -489,7 +605,52 @@ class CohortService {
     return this.getCohortById(id);
   }
 
-  async getCohortById(id) {
+  // async getCohortById(id) {
+  //   const cohort = await cohortRepository.findById(id);
+
+  //   if (!cohort) {
+  //     throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Cohort not found.');
+  //   }
+
+  //   const [participants, revenueMap, mostBookedSeats] = await Promise.all([
+  //     participantRepository.findByCohort(id),
+  //     cohortRepository.getRevenueMap([id]),
+  //     cohortRepository.getMostBookedSeats()
+  //   ]);
+
+  //   const summary = mapCohortSummary(
+  //     cohort,
+  //     Number(cohort.seatsFilled),
+  //     revenueMap[id] || 0,
+  //     mostBookedSeats
+  //   );
+
+  //   return {
+  //     ...summary,
+  //     participants: participants.map((participant) => ({
+  //       id: participant.id,
+  //       name: participant.name,
+  //       email: participant.email,
+  //       phone: participant.phone,
+  //       company: participant.company,
+  //       role: participant.role,
+  //       program_id: participant.programId,
+  //       program: participant.program
+  //         ? {
+  //             id: participant.program.id,
+  //             name: participant.program.name,
+  //             description: participant.program.description
+  //           }
+  //         : null,
+  //       payment_status: getParticipantPaymentStatus(participant.paymentStatus),
+  //       registration_status: getRegistrationStatusFromPaymentStatus(participant.paymentStatus),
+  //       is_active: Boolean(participant.isActive),
+  //       created_at: participant.createdAt
+  //     }))
+  //   };
+  // }
+
+    async getCohortById(id) {
     const cohort = await cohortRepository.findById(id);
 
     if (!cohort) {
