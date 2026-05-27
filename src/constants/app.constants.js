@@ -1,4 +1,14 @@
 const PAYMENT_STATUSES = Object.freeze(['pending', 'paid', 'failed', 'refunded']);
+const PAYMENT_TYPES = Object.freeze(['self_pay', 'employer_funded']);
+const SEAT_STATUSES = Object.freeze(['locked', 'available', 'assigned', 'active']);
+const INVOICE_STATUSES = Object.freeze([
+  'created',
+  'sent',
+  'paid',
+  'failed',
+  'refunded'
+]);
+const PAYMENT_METHODS = Object.freeze(['checkout', 'stripe_invoice']);
 const PARTICIPANT_PAYMENT_STATUSES = Object.freeze([
   'incomplete',
   'paid',
@@ -12,8 +22,13 @@ const STRIPE_EVENTS = Object.freeze({
   CHECKOUT_SESSION_COMPLETED: 'checkout.session.completed',
   CHECKOUT_SESSION_ASYNC_PAYMENT_FAILED: 'checkout.session.async_payment_failed',
   PAYMENT_INTENT_SUCCEEDED: 'payment_intent.succeeded',
-  PAYMENT_INTENT_PAYMENT_FAILED: 'payment_intent.payment_failed'
+  PAYMENT_INTENT_PAYMENT_FAILED: 'payment_intent.payment_failed',
+  INVOICE_PAID: 'invoice.paid',
+  INVOICE_PAYMENT_FAILED: 'invoice.payment_failed',
+  INVOICE_VOIDED: 'invoice.voided'
 });
+
+const EMPLOYER_FUNDED_FLOW = 'employer_funded_individual';
 
 const HTTP_STATUS = Object.freeze({
   OK: 200,
@@ -29,10 +44,15 @@ const HTTP_STATUS = Object.freeze({
 
 module.exports = {
   PAYMENT_STATUSES,
+  PAYMENT_TYPES,
+  SEAT_STATUSES,
+  INVOICE_STATUSES,
+  PAYMENT_METHODS,
   PARTICIPANT_PAYMENT_STATUSES,
   REGISTRATION_STATUSES,
   COHORT_STATUSES,
   FINAL_COHORT_STATUSES,
   STRIPE_EVENTS,
+  EMPLOYER_FUNDED_FLOW,
   HTTP_STATUS
 };

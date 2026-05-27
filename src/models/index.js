@@ -14,6 +14,9 @@ const emailListSubscriptionModel = require('./emailListSubscription.model');
 const contacUsModel = require('./contacUs.model');
 const programModel = require('./program.model');
 const cohortProgramModel = require('./cohortProgram.model');
+const seatModel = require('./seat.model');
+const invoiceModel = require('./invoice.model');
+const stripeCustomerModel = require('./stripeCustomer.model');
 
 const Admin = adminModel(sequelize, DataTypes);
 const AdminSession = adminSessionModel(sequelize, DataTypes);
@@ -29,6 +32,9 @@ const EmailListSubscription = emailListSubscriptionModel(sequelize, DataTypes);
 const ContactUs = contacUsModel(sequelize, DataTypes);
 const Program = programModel(sequelize, DataTypes);
 const CohortProgram = cohortProgramModel(sequelize, DataTypes);
+const Seat = seatModel(sequelize, DataTypes);
+const Invoice = invoiceModel(sequelize, DataTypes);
+const StripeCustomer = stripeCustomerModel(sequelize, DataTypes);
 
 Admin.hasMany(AdminSession, {
   foreignKey: 'adminId',
@@ -94,6 +100,51 @@ Payment.belongsTo(Cohort, {
   as: 'cohort'
 });
 
+Participant.hasOne(Seat, {
+  foreignKey: 'participantId',
+  as: 'seat'
+});
+
+Seat.belongsTo(Participant, {
+  foreignKey: 'participantId',
+  as: 'participant'
+});
+
+Cohort.hasMany(Seat, {
+  foreignKey: 'cohortId',
+  as: 'seats'
+});
+
+Seat.belongsTo(Cohort, {
+  foreignKey: 'cohortId',
+  as: 'cohort'
+});
+
+Seat.hasOne(Invoice, {
+  foreignKey: 'seatId',
+  as: 'invoice'
+});
+
+Invoice.belongsTo(Seat, {
+  foreignKey: 'seatId',
+  as: 'seat'
+});
+
+Invoice.belongsTo(Participant, {
+  foreignKey: 'participantId',
+  as: 'participant'
+});
+
+Invoice.belongsTo(Cohort, {
+  foreignKey: 'cohortId',
+  as: 'cohort'
+});
+
+Payment.belongsTo(Invoice, {
+  foreignKey: 'invoiceId',
+  as: 'invoice'
+});
+
 LabEnquiry.hasMany(LabEnquiryCohortInterest, {
   foreignKey: 'labEnquiryId',
   as: 'cohortInterests'
@@ -129,5 +180,8 @@ module.exports = {
   EmailListSubscription,
   ContactUs,
   Program,
-  CohortProgram
+  CohortProgram,
+  Seat,
+  Invoice,
+  StripeCustomer
 };

@@ -156,6 +156,27 @@ class PaymentRepository {
     });
   }
 
+  async findByStripeInvoiceId(stripeInvoiceId, options = {}) {
+    return Payment.findOne({
+      where: {
+        stripeInvoiceId
+      },
+      include: [
+        {
+          model: Participant,
+          as: 'participant',
+          attributes: ['id', 'cohortId', 'programId', 'name', 'email', 'paymentStatus', 'registrationStatus']
+        },
+        {
+          model: Cohort,
+          as: 'cohort',
+          attributes: ['id', 'name', 'price', 'seatLimit', 'seatsFilled', 'status']
+        }
+      ],
+      ...options
+    });
+  }
+
   async findByStripeCheckoutSessionId(stripeCheckoutSessionId, options = {}) {
     return Payment.findOne({
       where: {

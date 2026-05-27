@@ -1,4 +1,4 @@
-const { PAYMENT_STATUSES } = require('../constants/app.constants');
+const { PAYMENT_STATUSES, PAYMENT_METHODS } = require('../constants/app.constants');
 
 module.exports = (sequelize, DataTypes) => {
   const Payment = sequelize.define(
@@ -54,6 +54,23 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DATE,
         allowNull: true,
         field: 'completed_at'
+      },
+      paymentMethod: {
+        type: DataTypes.ENUM(...PAYMENT_METHODS),
+        allowNull: false,
+        defaultValue: 'checkout',
+        field: 'payment_method'
+      },
+      stripeInvoiceId: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        unique: true,
+        field: 'stripe_invoice_id'
+      },
+      invoiceId: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        field: 'invoice_id'
       }
     },
     {

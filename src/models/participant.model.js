@@ -1,5 +1,6 @@
 const {
   PAYMENT_STATUSES,
+  PAYMENT_TYPES,
   REGISTRATION_STATUSES
 } = require('../constants/app.constants');
 
@@ -75,6 +76,42 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: false,
         field: 'employer_funded'
+      },
+      paymentType: {
+        type: DataTypes.ENUM(...PAYMENT_TYPES),
+        allowNull: false,
+        defaultValue: 'self_pay',
+        field: 'payment_type'
+      },
+      billingManagerName: {
+        type: DataTypes.STRING(150),
+        allowNull: true,
+        field: 'billing_manager_name'
+      },
+      billingManagerEmail: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        field: 'billing_manager_email'
+      },
+      billingPhone: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        field: 'billing_phone'
+      },
+      billingAddress: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        field: 'billing_address'
+      },
+      billingCity: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        field: 'billing_city'
+      },
+      billingZipCode: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        field: 'billing_zip_code'
       },
       paymentStatus: {
         type: DataTypes.ENUM(...PAYMENT_STATUSES),

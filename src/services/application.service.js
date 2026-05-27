@@ -8,10 +8,13 @@ const cohortRepository = require('../repositories/cohort.repository');
 const participantRepository = require('../repositories/participant.repository');
 const paymentRepository = require('../repositories/payment.repository');
 const stripeService = require('./stripe.service');
+const crmService = require('./crm.service');
 const { getRegistrationStatusFromPaymentStatus } = require('../utils/participantStatus');
 const ApiError = require('../utils/apiError');
-const { HTTP_STATUS } = require('../constants/app.constants');
-const { sendPaymentConfirmationEmail,sendPaymentFailedEmail } = require('../utils/helpers');
+const { HTTP_STATUS, EMPLOYER_FUNDED_FLOW } = require('../constants/app.constants');
+const { sendPaymentConfirmationEmail,sendPaymentFailedEmail, sendEmployerPaymentReceivedEmail } = require('../utils/helpers');
+const seatRepository = require('../repositories/seat.repository');
+const invoiceRepository = require('../repositories/invoice.repository');
 
 const normalizeEmail = (email) => String(email).trim().toLowerCase();
 // Cohort prices may be stored as display strings like "6000 USD".
@@ -61,6 +64,9 @@ const mapApplicationParticipant = (participant) => ({
   agree_email: Boolean(participant.agreeEmail),
   agree_sms: Boolean(participant.agreeSms),
   employer_funded: Boolean(participant.employerFunded),
+  payment_type: participant.paymentType || 'self_pay',
+  billing_manager_name: participant.billingManagerName || null,
+  billing_manager_email: participant.billingManagerEmail || null,
   payment_status: participant.paymentStatus,
   registration_status: getRegistrationStatusFromPaymentStatus(participant.paymentStatus),
   is_active: Boolean(participant.isActive),
@@ -303,6 +309,7 @@ class ApplicationService {
         agreeEmail: Boolean(payload.agree_email),
         agreeSms: Boolean(payload.agree_sms),
         employerFunded: Boolean(payload.employer_funded),
+        paymentType: payload.employer_funded ? 'employer_funded' : 'self_pay',
         isActive: true,
         paymentStatus: 'pending',
         registrationStatus: getRegistrationStatusFromPaymentStatus('pending')
@@ -329,6 +336,7 @@ class ApplicationService {
       agreeEmail: Boolean(payload.agree_email),
       agreeSms: Boolean(payload.agree_sms),
       employerFunded: Boolean(payload.employer_funded),
+      paymentType: payload.employer_funded ? 'employer_funded' : 'self_pay',
       paymentStatus: 'pending',
       registrationStatus: getRegistrationStatusFromPaymentStatus('pending')
     });
@@ -359,6 +367,13 @@ class ApplicationService {
 
     if (participant.paymentStatus === 'paid') {
       throw new ApiError(HTTP_STATUS.CONFLICT, 'Payment already completed.');
+    }
+
+    if (participant.paymentType === 'employer_funded' || participant.employerFunded) {
+      throw new ApiError(
+        HTTP_STATUS.BAD_REQUEST,
+        'This registration uses employer invoicing. Checkout is not available.'
+      );
     }
 
     const cohort = participant.cohort || (await ensureCohortExists(payload.cohort_id));
@@ -962,6 +977,409 @@ class ApplicationService {
         );
       }
     }
+
+    return result;
+  }
+
+  async processPaidStripeInvoice(stripeInvoice, stripeEventId) {
+    const metadata = stripeInvoice?.metadata || {};
+
+    if (metadata.flow !== EMPLOYER_FUNDED_FLOW) {
+      return { processed: false, reason: 'unsupported_flow' };
+    }
+
+    const participantId = Number(metadata.participant_id);
+    const cohortId = Number(metadata.cohort_id);
+    const seatId = Number(metadata.seat_id);
+
+    if (!participantId || !cohortId || !seatId) {
+      throw new ApiError(
+        HTTP_STATUS.BAD_REQUEST,
+        'Missing participant_id, cohort_id, or seat_id in Stripe invoice metadata.'
+      );
+    }
+
+    let confirmationEmailPayload = null;
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const invoice = await invoiceRepository.findByStripeInvoiceId(stripeInvoice.id, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Invoice
+        }
+      });
+
+      if (!invoice) {
+        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Local invoice record not found.');
+      }
+
+      if (invoice.status === 'paid' && invoice.stripeEventId === stripeEventId) {
+        return { processed: false, duplicate: true };
+      }
+
+      if (invoice.status === 'paid') {
+        return { processed: false, duplicate: true };
+      }
+
+      const seat = await seatRepository.findById(seatId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Seat
+        }
+      });
+
+      const participant = await participantRepository.findById(participantId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Participant
+        }
+      });
+
+      const cohort = await cohortRepository.findById(cohortId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Cohort
+        }
+      });
+
+      if (!seat || Number(seat.participantId) !== participantId || Number(seat.cohortId) !== cohortId) {
+        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Seat not found for this registration.');
+      }
+
+      if (!participant || Number(participant.cohortId) !== cohortId) {
+        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Participant not found for this cohort.');
+      }
+
+      if (!cohort) {
+        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Cohort not found.');
+      }
+
+      if (participant.paymentStatus === 'paid' && seat.status === 'active') {
+        await invoiceRepository.update(
+          invoice,
+          {
+            status: 'paid',
+            paidAt: invoice.paidAt || new Date(),
+            stripeEventId
+          },
+          { transaction }
+        );
+
+        return { processed: false, duplicate: true };
+      }
+
+      if (!cohort.isActive || cohort.status === 'closed') {
+        throw new ApiError(
+          HTTP_STATUS.CONFLICT,
+          'Payment received but no seats are currently available for this cohort.'
+        );
+      }
+
+      const paidCohortSeats = await participantRepository.countEnrolledByCohort(cohortId, {
+        transaction
+      });
+
+      if (paidCohortSeats >= Number(cohort.seatLimit)) {
+        throw new ApiError(
+          HTTP_STATUS.CONFLICT,
+          'Payment received but no seats are currently available for this cohort.'
+        );
+      }
+
+      const programMapping = await ensureProgramSeatAvailableForPayment(participant, transaction);
+      const cohortPrice = parseStoredPrice(cohort.price);
+      const amount = Number(stripeInvoice.amount_paid || 0) / 100;
+      const paymentIntentId =
+        typeof stripeInvoice.payment_intent === 'string'
+          ? stripeInvoice.payment_intent
+          : stripeInvoice.payment_intent?.id || stripeInvoice.id;
+
+      await seatRepository.update(
+        seat,
+        {
+          status: 'active',
+          activatedAt: new Date()
+        },
+        { transaction }
+      );
+
+      await invoiceRepository.update(
+        invoice,
+        {
+          status: 'paid',
+          paidAt: new Date(),
+          stripeEventId,
+          hostedInvoiceUrl: stripeInvoice.hosted_invoice_url || invoice.hostedInvoiceUrl,
+          invoicePdfUrl: stripeInvoice.invoice_pdf || invoice.invoicePdfUrl
+        },
+        { transaction }
+      );
+
+      let payment = await paymentRepository.findByStripeInvoiceId(stripeInvoice.id, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Payment
+        }
+      });
+
+      if (!payment) {
+        payment = await paymentRepository.findLatestByParticipantAndCohort(participantId, cohortId, {
+          transaction,
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Payment
+          }
+        });
+      }
+
+      const accessPassword = generateParticipantAccessPassword();
+      const passwordHash = await bcrypt.hash(accessPassword, env.bcryptSaltRounds);
+      const passwordGeneratedAt = new Date();
+
+      const paymentPayload = {
+        amount: amount || Number(payment?.amount) || cohortPrice,
+        status: 'paid',
+        paymentMethod: 'stripe_invoice',
+        transactionId: paymentIntentId,
+        stripeInvoiceId: stripeInvoice.id,
+        invoiceId: invoice.id,
+        checkoutUrl: stripeInvoice.hosted_invoice_url || payment?.checkoutUrl || null,
+        completedAt: new Date()
+      };
+
+      if (payment) {
+        await paymentRepository.update(payment, paymentPayload, { transaction });
+      } else {
+        payment = await paymentRepository.create(
+          {
+            participantId,
+            cohortId,
+            ...paymentPayload
+          },
+          { transaction }
+        );
+      }
+
+      await participantRepository.update(
+        participant,
+        {
+          paymentStatus: 'paid',
+          registrationStatus: getRegistrationStatusFromPaymentStatus('paid'),
+          passwordHash,
+          passwordGeneratedAt
+        },
+        { transaction }
+      );
+
+      const seatSync = await syncPaidSeatCounts({
+        cohort,
+        participant,
+        programMapping,
+        transaction
+      });
+
+      confirmationEmailPayload = {
+        participantEmail: participant.email,
+        participantName: participant.name,
+        cohortName: cohort.name,
+        accessPassword,
+        managerEmail: invoice.managerEmail,
+        managerName: invoice.managerName
+      };
+
+      console.log('[Stripe Webhook] Employer invoice paid — enrollment activated.', {
+        stripe_invoice_id: stripeInvoice.id,
+        participant_id: participantId,
+        cohort_id: cohortId,
+        seat_id: seatId,
+        payment_id: payment.id,
+        seats_filled: seatSync.seatsFilled
+      });
+
+      return {
+        processed: true,
+        duplicate: false,
+        participant_id: participantId,
+        cohort_id: cohortId,
+        payment_id: payment.id
+      };
+    });
+
+    if (result?.processed && confirmationEmailPayload) {
+      try {
+        await sendPaymentConfirmationEmail(confirmationEmailPayload);
+        await sendEmployerPaymentReceivedEmail(confirmationEmailPayload);
+        
+        await crmService.update({
+          email: confirmationEmailPayload.participantEmail,
+          tags: ['Enrollment Confirmed']
+        });
+      } catch (error) {
+        console.error('[Stripe Webhook] Employer paid notification email failed:', error.message);
+      }
+    }
+
+    return result;
+  }
+
+  async processFailedStripeInvoice(stripeInvoice, stripeEventId) {
+    const metadata = stripeInvoice?.metadata || {};
+
+    if (metadata.flow !== EMPLOYER_FUNDED_FLOW) {
+      return { processed: false, reason: 'unsupported_flow' };
+    }
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const invoice = await invoiceRepository.findByStripeInvoiceId(stripeInvoice.id, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Invoice
+        }
+      });
+
+      if (!invoice || invoice.status === 'paid') {
+        return { processed: false, ignored: true };
+      }
+
+      await invoiceRepository.update(
+        invoice,
+        {
+          status: 'failed',
+          stripeEventId
+        },
+        { transaction }
+      );
+
+      const payment = await paymentRepository.findByStripeInvoiceId(stripeInvoice.id, { transaction });
+
+      if (payment && payment.status !== 'paid') {
+        await paymentRepository.update(
+          payment,
+          {
+            status: 'failed'
+          },
+          { transaction }
+        );
+      }
+
+      const participant = await participantRepository.findById(invoice.participantId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Participant
+        }
+      });
+
+      if (participant && participant.paymentStatus !== 'paid') {
+        await participantRepository.update(
+          participant,
+          {
+            paymentStatus: 'failed',
+            registrationStatus: getRegistrationStatusFromPaymentStatus('failed')
+          },
+          { transaction }
+        );
+      }
+
+      return {
+        processed: true,
+        invoice_id: invoice.id,
+        participant_email: participant ? participant.email : null
+      };
+    });
+
+    if (result?.processed && result.participant_email) {
+      try {
+        await crmService.update({
+          email: result.participant_email,
+          tags: ['Payment Failed']
+        });
+      } catch (error) {
+        console.error('[Stripe Webhook] CRM update failed:', error.message);
+      }
+    }
+
+    return result;
+  }
+
+  async processVoidedStripeInvoice(stripeInvoice, stripeEventId) {
+    const metadata = stripeInvoice?.metadata || {};
+
+    if (metadata.flow !== EMPLOYER_FUNDED_FLOW) {
+      return { processed: false, reason: 'unsupported_flow' };
+    }
+
+    const seatId = Number(metadata.seat_id);
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const invoice = await invoiceRepository.findByStripeInvoiceId(stripeInvoice.id, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Invoice
+        }
+      });
+
+      if (!invoice) {
+        return { processed: false, ignored: true };
+      }
+
+      if (invoice.status === 'paid') {
+        return { processed: false, ignored: true, reason: 'already_paid' };
+      }
+
+      await invoiceRepository.update(
+        invoice,
+        {
+          status: 'failed',
+          stripeEventId
+        },
+        { transaction }
+      );
+
+      if (seatId) {
+        const seat = await seatRepository.findById(seatId, {
+          transaction,
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Seat
+          }
+        });
+
+        if (seat && seat.status === 'locked') {
+          await seatRepository.update(
+            seat,
+            {
+              status: 'available'
+            },
+            { transaction }
+          );
+        }
+      }
+
+      const payment = await paymentRepository.findByStripeInvoiceId(stripeInvoice.id, { transaction });
+
+      if (payment && payment.status !== 'paid') {
+        await paymentRepository.update(
+          payment,
+          {
+            status: 'failed'
+          },
+          { transaction }
+        );
+      }
+
+      return {
+        processed: true,
+        invoice_id: invoice.id
+      };
+    });
 
     return result;
   }

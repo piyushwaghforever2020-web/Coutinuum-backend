@@ -1,7 +1,9 @@
 const express = require('express');
 const applicationController = require('../controllers/application.controller');
+const cohortRegistrationController = require('../controllers/cohortRegistration.controller');
 const validate = require('../middlewares/validate.middleware');
 const applicationValidation = require('../validations/application.validation');
+const cohortRegistrationValidation = require('../validations/cohortRegistration.validation');
 
 const router = express.Router();
 
@@ -9,6 +11,12 @@ router.post(
   '/application',
   validate(applicationValidation.submitApplication),
   applicationController.submitApplication
+);
+
+router.post(
+  '/cohort/register',
+  validate(cohortRegistrationValidation.registerCohort),
+  cohortRegistrationController.registerCohort
 );
 
 router.post(

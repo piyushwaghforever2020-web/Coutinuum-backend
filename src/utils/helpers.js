@@ -1,5 +1,5 @@
 const sendMail = require('./sendMail');
-const { buildEmailCard, getEmailLogoAttachments,escapeHtml } = require('./emailTemplate');
+const { buildEmailCard, getEmailLogoAttachments, escapeHtml } = require('./emailTemplate');
 
 // -------- Payment Success ----------
 const sendPaymentConfirmationEmail = async ({
@@ -54,7 +54,76 @@ const sendPaymentFailedEmail = async ({
   });
 };
 
+// -------- Employer Invoice Sent (to manager) ----------
+const sendEmployerInvoiceSentEmail = async ({
+  managerEmail,
+  managerName,
+  participantName,
+  cohortName,
+  hostedInvoiceUrl
+}) => {
+  await sendMail({
+    to: [{ email: managerEmail, name: managerName }],
+    subject: 'Cohort Enrollment Invoice',
+    html: buildEmailCard({
+      iconType: 'success',
+      title: 'Invoice Sent',
+      greeting: `Hello ${escapeHtml(managerName)},`,
+      messageHtml: `An invoice has been sent for <strong>${escapeHtml(participantName)}</strong>'s enrollment in <strong>${escapeHtml(cohortName)}</strong>. Please complete payment to activate the seat.`,
+      buttonLabel: 'View Invoice',
+      buttonUrl: hostedInvoiceUrl || '#',
+      footer: 'If you did not expect this invoice, please contact support.'
+    }),
+    attachments: getEmailLogoAttachments()
+  });
+};
+
+// -------- Employer Funding Pending (to participant) ----------
+const sendEmployerFundingPendingEmail = async ({
+  participantEmail,
+  participantName,
+  cohortName,
+  managerName
+}) => {
+  await sendMail({
+    to: [{ email: participantEmail, name: participantName }],
+    subject: 'Enrollment Pending Employer Payment',
+    html: buildEmailCard({
+      iconType: 'success',
+      title: 'Registration Received',
+      greeting: `Hello ${escapeHtml(participantName)},`,
+      messageHtml: `Your registration for <strong>${escapeHtml(cohortName)}</strong> is pending. An invoice has been sent to <strong>${escapeHtml(managerName)}</strong> for payment. You will receive a confirmation email once payment is complete.`,
+      footer: 'If you have questions, please contact support.'
+    }),
+    attachments: getEmailLogoAttachments()
+  });
+};
+
+// -------- Employer Payment Received (to manager) ----------
+const sendEmployerPaymentReceivedEmail = async ({
+  managerEmail,
+  managerName,
+  participantName,
+  cohortName
+}) => {
+  await sendMail({
+    to: [{ email: managerEmail, name: managerName }],
+    subject: 'Payment Received — Cohort Enrollment',
+    html: buildEmailCard({
+      iconType: 'success',
+      title: 'Payment Confirmed',
+      greeting: `Hello ${escapeHtml(managerName)},`,
+      messageHtml: `Payment for <strong>${escapeHtml(participantName)}</strong>'s enrollment in <strong>${escapeHtml(cohortName)}</strong> has been received. The participant seat is now active.`,
+      footer: 'Thank you for your payment.'
+    }),
+    attachments: getEmailLogoAttachments()
+  });
+};
+
 module.exports = {
   sendPaymentConfirmationEmail,
-  sendPaymentFailedEmail
+  sendPaymentFailedEmail,
+  sendEmployerInvoiceSentEmail,
+  sendEmployerFundingPendingEmail,
+  sendEmployerPaymentReceivedEmail
 };
