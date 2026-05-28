@@ -313,7 +313,7 @@ class CohortService {
     const seatsRemaining = Math.max(seatLimit - seatsFilled, 0);
     const seatAvailable =
       Boolean(cohort.isActive) &&
-      cohort.status === 'active' &&
+      (cohort.status === 'active' || cohort.status === 'open') &&
       seatsRemaining > 0;
 
     return {

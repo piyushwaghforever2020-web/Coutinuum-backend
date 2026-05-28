@@ -35,7 +35,10 @@ const envSchema = Joi.object({
   SMTP_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
   SMTP_USER: Joi.string().allow('').default(''),
   SMTP_PASSWORD: Joi.string().allow('').default(''),
-  SMTP_FROM_EMAIL: Joi.string().email().allow('').default('')
+  SMTP_FROM_EMAIL: Joi.string().email().allow('').default(''),
+  FRONTEND_URL: Joi.string().uri().default('http://coutinuum.codingserver.com'),
+  MAGIC_LINK_EXPIRES_MIN: Joi.number().integer().min(15).max(60).default(30),
+  MAGIC_LINK_SECRET: Joi.string().min(16).default('')
 }).unknown();
 
 const { error, value } = envSchema.validate(process.env, {
@@ -87,5 +90,10 @@ module.exports = Object.freeze({
     user: value.SMTP_USER,
     password: value.SMTP_PASSWORD,
     fromEmail: value.SMTP_FROM_EMAIL
+  },
+  frontendUrl: value.FRONTEND_URL,
+  magicLink: {
+    expiresMin: value.MAGIC_LINK_EXPIRES_MIN,
+    secret: value.MAGIC_LINK_SECRET || value.JWT_SECRET
   }
 });

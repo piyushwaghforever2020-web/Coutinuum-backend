@@ -12,9 +12,10 @@ const crmService = require('./crm.service');
 const { getRegistrationStatusFromPaymentStatus } = require('../utils/participantStatus');
 const ApiError = require('../utils/apiError');
 const { HTTP_STATUS, EMPLOYER_FUNDED_FLOW } = require('../constants/app.constants');
-const { sendPaymentConfirmationEmail,sendPaymentFailedEmail, sendEmployerPaymentReceivedEmail } = require('../utils/helpers');
+const { sendPaymentConfirmationEmail,sendPaymentFailedEmail, sendEmployerPaymentReceivedEmail,sendMagicLinkEmail } = require('../utils/helpers');
 const seatRepository = require('../repositories/seat.repository');
 const invoiceRepository = require('../repositories/invoice.repository');
+const magicLinkService = require('./magicLink.service');
 
 const normalizeEmail = (email) => String(email).trim().toLowerCase();
 // Cohort prices may be stored as display strings like "6000 USD".
@@ -749,6 +750,21 @@ class ApplicationService {
           payment_id: result.payment_id
         });
         await sendPaymentConfirmationEmail(confirmationEmailPayload);
+
+        
+        const participantMagicLinkResult = await magicLinkService.generateMagicLink({
+          email: confirmationEmailPayload.participantEmail,
+          role: 'participant',
+          cohortId: confirmationEmailPayload.cohortId,
+          purpose: 'login'
+        });
+
+        const { sendMagicLinkEmail } = require('../utils/helpers');
+        await sendMagicLinkEmail({
+          email: confirmationEmailPayload.participantEmail,
+          name: confirmationEmailPayload.participantName,
+          magicLinkUrl: participantMagicLinkResult.magicLinkUrl
+        });
       } catch (error) {
         console.error(
           '[Stripe Webhook] Payment confirmation email failed:',
@@ -1213,6 +1229,21 @@ class ApplicationService {
     if (result?.processed && confirmationEmailPayload) {
       try {
         await sendPaymentConfirmationEmail(confirmationEmailPayload);
+        
+        const participantMagicLinkResult = await magicLinkService.generateMagicLink({
+          email: confirmationEmailPayload.participantEmail,
+          role: 'participant',
+          cohortId: confirmationEmailPayload.cohortId,
+          purpose: 'login'
+        });
+
+    
+        await sendMagicLinkEmail({
+          email: confirmationEmailPayload.participantEmail,
+          name: confirmationEmailPayload.participantName,
+          magicLinkUrl: participantMagicLinkResult.magicLinkUrl
+        });
+
         await sendEmployerPaymentReceivedEmail(confirmationEmailPayload);
         
         await crmService.update({

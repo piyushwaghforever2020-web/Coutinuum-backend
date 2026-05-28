@@ -1,11 +1,9 @@
 const fs = require('fs/promises');
 const path = require('path');
-const mysql = require('mysql2/promise');
+const { Client } = require('pg');
 const env = require('../src/config/env');
 const sequelize = require('../src/database/connection');
 const seedAdmin = require('./seed-admin');
-
-const escapeIdentifier = (value) => `\`${String(value).replace(/`/g, '``')}\``;
 
 const buildSslOptions = () =>
   env.db.ssl
@@ -17,25 +15,22 @@ const buildSslOptions = () =>
       }
     : {};
 
-const ensureMigrationTable = async (connection) => {
-  await connection.query(`
+const ensureMigrationTable = async (client) => {
+  await client.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      filename VARCHAR(255) NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      UNIQUE KEY uq_schema_migrations_filename (filename)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      id BIGSERIAL PRIMARY KEY,
+      filename VARCHAR(255) NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 };
 
-const applyIncrementalMigrations = async (connection) => {
+const applyIncrementalMigrations = async (client) => {
   const migrationsDir = path.join(__dirname, '..', 'database', 'migrations');
   const entries = await fs.readdir(migrationsDir, { withFileTypes: true }).catch((error) => {
     if (error.code === 'ENOENT') {
       return [];
     }
-
     throw error;
   });
 
@@ -48,11 +43,11 @@ const applyIncrementalMigrations = async (connection) => {
     return;
   }
 
-  await ensureMigrationTable(connection);
+  await ensureMigrationTable(client);
 
   for (const filename of migrationFiles) {
-    const [rows] = await connection.query(
-      'SELECT id FROM schema_migrations WHERE filename = ? LIMIT 1',
+    const { rows } = await client.query(
+      'SELECT id FROM schema_migrations WHERE filename = $1 LIMIT 1',
       [filename]
     );
 
@@ -63,15 +58,15 @@ const applyIncrementalMigrations = async (connection) => {
     const migrationPath = path.join(migrationsDir, filename);
     const migrationSql = await fs.readFile(migrationPath, 'utf8');
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
     try {
-      await connection.query(migrationSql);
-      await connection.query('INSERT INTO schema_migrations (filename) VALUES (?)', [filename]);
-      await connection.commit();
+      await client.query(migrationSql);
+      await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [filename]);
+      await client.query('COMMIT');
       console.log(`Applied migration: ${filename}`);
     } catch (error) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       throw error;
     }
   }
@@ -79,31 +74,23 @@ const applyIncrementalMigrations = async (connection) => {
 
 const migrate = async (options = {}) => {
   const { closeConnection = true } = options;
-  const schemaPath = path.join(__dirname, '..', 'database', 'schema.sql');
-  const schemaSql = await fs.readFile(schemaPath, 'utf8');
 
-  const connection = await mysql.createConnection({
+  const client = new Client({
     host: env.db.host,
     port: env.db.port,
     user: env.db.user,
     password: env.db.password,
-    multipleStatements: true,
+    database: env.db.name,
     ...buildSslOptions()
   });
 
   try {
-    const databaseName = escapeIdentifier(env.db.name);
-
-    await connection.query(
-      `CREATE DATABASE IF NOT EXISTS ${databaseName} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
-    );
-    await connection.query(`USE ${databaseName}`);
-    await connection.query(schemaSql);
-    await applyIncrementalMigrations(connection);
+    await client.connect();
+    await applyIncrementalMigrations(client);
 
     console.log(`Database schema applied successfully for ${env.db.name}.`);
   } finally {
-    await connection.end();
+    await client.end();
   }
 
   try {
@@ -123,3 +110,4 @@ if (require.main === module) {
 }
 
 module.exports = migrate;
+

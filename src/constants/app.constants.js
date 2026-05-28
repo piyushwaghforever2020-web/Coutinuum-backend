@@ -1,4 +1,6 @@
 const PAYMENT_STATUSES = Object.freeze(['pending', 'paid', 'failed', 'refunded']);
+const MAGIC_LINK_ROLES = Object.freeze(['participant', 'employer']);
+const MAGIC_LINK_PURPOSES = Object.freeze(['login', 'file_download', 'dashboard_access']);
 const PAYMENT_TYPES = Object.freeze(['self_pay', 'employer_funded']);
 const SEAT_STATUSES = Object.freeze(['locked', 'available', 'assigned', 'active']);
 const INVOICE_STATUSES = Object.freeze([
@@ -54,5 +56,7 @@ module.exports = {
   FINAL_COHORT_STATUSES,
   STRIPE_EVENTS,
   EMPLOYER_FUNDED_FLOW,
-  HTTP_STATUS
+  HTTP_STATUS,
+  MAGIC_LINK_ROLES,
+  MAGIC_LINK_PURPOSES
 };

@@ -29,7 +29,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 0,
-        field: 'allocated_seats'
+        field: 'allocated_seats',
+        validate: {
+          max: 20
+        }
       },
       seatsFilled: {
         type: DataTypes.INTEGER,

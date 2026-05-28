@@ -17,6 +17,7 @@ const cohortProgramModel = require('./cohortProgram.model');
 const seatModel = require('./seat.model');
 const invoiceModel = require('./invoice.model');
 const stripeCustomerModel = require('./stripeCustomer.model');
+const magicLinkTokenModel = require('./magicLinkToken.model');
 
 const Admin = adminModel(sequelize, DataTypes);
 const AdminSession = adminSessionModel(sequelize, DataTypes);
@@ -35,6 +36,7 @@ const CohortProgram = cohortProgramModel(sequelize, DataTypes);
 const Seat = seatModel(sequelize, DataTypes);
 const Invoice = invoiceModel(sequelize, DataTypes);
 const StripeCustomer = stripeCustomerModel(sequelize, DataTypes);
+const MagicLinkToken = magicLinkTokenModel(sequelize, DataTypes);
 
 Admin.hasMany(AdminSession, {
   foreignKey: 'adminId',
@@ -165,6 +167,21 @@ WaitlistReferralSource.belongsTo(WaitlistSubmission, {
   as: 'waitlistSubmission'
 });
 
+Participant.hasMany(MagicLinkToken, {
+  foreignKey: 'participantId',
+  as: 'magicLinkTokens'
+});
+
+MagicLinkToken.belongsTo(Participant, {
+  foreignKey: 'participantId',
+  as: 'participant'
+});
+
+MagicLinkToken.belongsTo(Cohort, {
+  foreignKey: 'cohortId',
+  as: 'cohort'
+});
+
 module.exports = {
   sequelize,
   Admin,
@@ -183,5 +200,6 @@ module.exports = {
   CohortProgram,
   Seat,
   Invoice,
-  StripeCustomer
+  StripeCustomer,
+  MagicLinkToken
 };

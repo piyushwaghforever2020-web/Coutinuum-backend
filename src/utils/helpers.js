@@ -31,6 +31,28 @@ const sendPaymentConfirmationEmail = async ({
   });
 };
 
+// -------- Generic Magic Link ----------
+const sendMagicLinkEmail = async ({
+  email,
+  name,
+  magicLinkUrl
+}) => {
+  await sendMail({
+    to: [{ email, name }],
+    subject: 'Your Login Link — Continuum',
+    html: buildEmailCard({
+      iconType: null,
+      title: 'Your Login Link',
+      greeting: `Hello ${escapeHtml(name)},`,
+      messageHtml: `Click the button below to access your account. This link expires in 30 minutes.`,
+      buttonLabel: 'Access Your Account →',
+      buttonUrl: magicLinkUrl,
+      footer: 'If you did not request this link, you can safely ignore this email.'
+    }),
+    attachments: getEmailLogoAttachments()
+  });
+};
+
 // -------- Payment Failed ----------
 const sendPaymentFailedEmail = async ({
   participantEmail,
@@ -122,6 +144,7 @@ const sendEmployerPaymentReceivedEmail = async ({
 
 module.exports = {
   sendPaymentConfirmationEmail,
+  sendMagicLinkEmail,
   sendPaymentFailedEmail,
   sendEmployerInvoiceSentEmail,
   sendEmployerFundingPendingEmail,
