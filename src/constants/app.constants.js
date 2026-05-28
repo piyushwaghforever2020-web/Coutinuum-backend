@@ -4,6 +4,8 @@ const MAGIC_LINK_PURPOSES = Object.freeze(['login', 'file_download', 'dashboard_
 const PAYMENT_TYPES = Object.freeze(['self_pay', 'employer_funded']);
 const SEAT_STATUSES = Object.freeze(['locked', 'available', 'assigned', 'active']);
 const INVOICE_STATUSES = Object.freeze([
+  'invoice_requested',
+  'invoice_sent',
   'created',
   'sent',
   'paid',
@@ -25,6 +27,9 @@ const STRIPE_EVENTS = Object.freeze({
   CHECKOUT_SESSION_ASYNC_PAYMENT_FAILED: 'checkout.session.async_payment_failed',
   PAYMENT_INTENT_SUCCEEDED: 'payment_intent.succeeded',
   PAYMENT_INTENT_PAYMENT_FAILED: 'payment_intent.payment_failed',
+  INVOICE_CREATED: 'invoice.created',
+  INVOICE_FINALIZED: 'invoice.finalized',
+  INVOICE_SENT: 'invoice.sent',
   INVOICE_PAID: 'invoice.paid',
   INVOICE_PAYMENT_FAILED: 'invoice.payment_failed',
   INVOICE_VOIDED: 'invoice.voided'

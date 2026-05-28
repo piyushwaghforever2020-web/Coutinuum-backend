@@ -63,7 +63,7 @@ module.exports = (sequelize, DataTypes) => {
       status: {
         type: DataTypes.ENUM(...INVOICE_STATUSES),
         allowNull: false,
-        defaultValue: 'created'
+        defaultValue: 'invoice_requested'
       },
       hostedInvoiceUrl: {
         type: DataTypes.STRING(2048),

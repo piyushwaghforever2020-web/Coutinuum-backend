@@ -717,6 +717,7 @@ class ApplicationService {
         participantEmail: participant.email,
         participantName: participant.name,
         cohortName: cohort.name,
+        cohortId,
         accessPassword
       };
       //-------------------------------------------------//
@@ -997,6 +998,66 @@ class ApplicationService {
     return result;
   }
 
+  async syncRequestedStripeInvoice(stripeInvoice, stripeEventId, { markSent = false } = {}) {
+    const metadata = stripeInvoice?.metadata || {};
+
+    if (metadata.flow !== EMPLOYER_FUNDED_FLOW) {
+      return { processed: false, reason: 'unsupported_flow' };
+    }
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const invoice = await invoiceRepository.findByStripeInvoiceId(stripeInvoice.id, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Invoice
+        }
+      });
+
+      if (!invoice) {
+        return { processed: false, ignored: true, reason: 'local_invoice_not_found_yet' };
+      }
+
+      if (['paid', 'failed', 'refunded'].includes(invoice.status)) {
+        return { processed: false, ignored: true, reason: `invoice_already_${invoice.status}` };
+      }
+
+      await invoiceRepository.update(
+        invoice,
+        {
+          status: 'invoice_requested',
+          stripeInvoiceNumber: stripeInvoice.number || invoice.stripeInvoiceNumber,
+          hostedInvoiceUrl: stripeInvoice.hosted_invoice_url || invoice.hostedInvoiceUrl,
+          invoicePdfUrl: stripeInvoice.invoice_pdf || invoice.invoicePdfUrl,
+          sentAt: markSent ? invoice.sentAt || new Date() : invoice.sentAt,
+          stripeEventId
+        },
+        { transaction }
+      );
+
+      return {
+        processed: true,
+        invoice_id: invoice.id,
+        invoice_status: 'invoice_requested',
+        stripe_invoice_status: stripeInvoice.status || null
+      };
+    });
+
+    return result;
+  }
+
+  async processCreatedStripeInvoice(stripeInvoice, stripeEventId) {
+    return this.syncRequestedStripeInvoice(stripeInvoice, stripeEventId);
+  }
+
+  async processFinalizedStripeInvoice(stripeInvoice, stripeEventId) {
+    return this.syncRequestedStripeInvoice(stripeInvoice, stripeEventId);
+  }
+
+  async processSentStripeInvoice(stripeInvoice, stripeEventId) {
+    return this.syncRequestedStripeInvoice(stripeInvoice, stripeEventId, { markSent: true });
+  }
+
   async processPaidStripeInvoice(stripeInvoice, stripeEventId) {
     const metadata = stripeInvoice?.metadata || {};
 
@@ -1013,6 +1074,28 @@ class ApplicationService {
         HTTP_STATUS.BAD_REQUEST,
         'Missing participant_id, cohort_id, or seat_id in Stripe invoice metadata.'
       );
+    }
+
+    const stripeAmountPaidInCents = Number(stripeInvoice.amount_paid || 0);
+    const stripeTotalInCents = Number(stripeInvoice.total ?? stripeInvoice.amount_due ?? 0);
+
+    if (
+      !Number.isFinite(stripeAmountPaidInCents) ||
+      !Number.isFinite(stripeTotalInCents) ||
+      stripeAmountPaidInCents <= 0 ||
+      stripeTotalInCents <= 0
+    ) {
+      console.warn('[Stripe Webhook] Ignoring zero-amount invoice.paid event.', {
+        stripe_invoice_id: stripeInvoice.id,
+        stripe_amount_paid: stripeAmountPaidInCents,
+        stripe_total: stripeTotalInCents
+      });
+
+      return {
+        processed: false,
+        ignored: true,
+        reason: 'zero_amount_invoice_paid_event'
+      };
     }
 
     let confirmationEmailPayload = null;
@@ -1036,6 +1119,37 @@ class ApplicationService {
 
       if (invoice.status === 'paid') {
         return { processed: false, duplicate: true };
+      }
+
+      const localInvoiceAmountInCents = Math.round(Number(invoice.amount || 0) * 100);
+
+      if (
+        !Number.isFinite(localInvoiceAmountInCents) ||
+        localInvoiceAmountInCents <= 0 ||
+        stripeAmountPaidInCents < localInvoiceAmountInCents
+      ) {
+        console.warn('[Stripe Webhook] Ignoring invoice.paid without full payable amount.', {
+          stripe_invoice_id: stripeInvoice.id,
+          stripe_amount_paid: stripeAmountPaidInCents,
+          local_invoice_amount: localInvoiceAmountInCents
+        });
+
+        await invoiceRepository.update(
+          invoice,
+          {
+            status: 'invoice_requested',
+            stripeEventId,
+            hostedInvoiceUrl: stripeInvoice.hosted_invoice_url || invoice.hostedInvoiceUrl,
+            invoicePdfUrl: stripeInvoice.invoice_pdf || invoice.invoicePdfUrl
+          },
+          { transaction }
+        );
+
+        return {
+          processed: false,
+          ignored: true,
+          reason: 'invoice_paid_event_without_full_amount'
+        };
       }
 
       const seat = await seatRepository.findById(seatId, {
@@ -1203,6 +1317,7 @@ class ApplicationService {
         participantEmail: participant.email,
         participantName: participant.name,
         cohortName: cohort.name,
+        cohortId,
         accessPassword,
         managerEmail: invoice.managerEmail,
         managerName: invoice.managerName

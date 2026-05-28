@@ -53,6 +53,36 @@ const handleWebhook = asyncHandler(async (req, res) => {
       result
     });
   }
+  else if (event.type === STRIPE_EVENTS.INVOICE_CREATED) {
+    const result = await applicationService.processCreatedStripeInvoice(
+      event.data.object,
+      event.id
+    );
+    console.log('[Stripe Webhook] Invoice created processed.', {
+      event_id: event.id,
+      result
+    });
+  }
+  else if (event.type === STRIPE_EVENTS.INVOICE_FINALIZED) {
+    const result = await applicationService.processFinalizedStripeInvoice(
+      event.data.object,
+      event.id
+    );
+    console.log('[Stripe Webhook] Invoice finalized processed.', {
+      event_id: event.id,
+      result
+    });
+  }
+  else if (event.type === STRIPE_EVENTS.INVOICE_SENT) {
+    const result = await applicationService.processSentStripeInvoice(
+      event.data.object,
+      event.id
+    );
+    console.log('[Stripe Webhook] Invoice sent processed.', {
+      event_id: event.id,
+      result
+    });
+  }
   else if (event.type === STRIPE_EVENTS.INVOICE_PAID) {
     const result = await applicationService.processPaidStripeInvoice(
       event.data.object,

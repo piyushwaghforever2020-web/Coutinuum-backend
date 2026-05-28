@@ -37,6 +37,16 @@ const isProgramFullForSeatCount = (programMapping, seatsFilled) =>
   Number(programMapping.allocatedSeats) > 0 &&
   Number(seatsFilled) >= Number(programMapping.allocatedSeats);
 
+const OPEN_EMPLOYER_INVOICE_STATUSES = [
+  'invoice_requested',
+  'invoice_sent',
+  'created',
+  'sent'
+];
+
+const getEmployerInvoiceStatus = (status) =>
+  ['paid', 'failed', 'refunded'].includes(status) ? status : 'invoice_requested';
+
 const buildEmployerResponse = (participant, seat, invoice, reused = false) => ({
   flow: 'employer_invoice',
   reused_existing_invoice: reused,
@@ -45,6 +55,9 @@ const buildEmployerResponse = (participant, seat, invoice, reused = false) => ({
   seat_status: seat.status,
   invoice_id: invoice.id,
   stripe_invoice_id: invoice.stripeInvoiceId,
+  invoice_status: getEmployerInvoiceStatus(invoice.status),
+  invoice_amount: Number(invoice.amount),
+  invoice_currency: invoice.currency,
   hosted_invoice_url: invoice.hostedInvoiceUrl,
   payment_status: participant.paymentStatus,
   registration_status: getRegistrationStatusFromPaymentStatus(participant.paymentStatus)
@@ -55,6 +68,13 @@ class EmployerFundedRegistrationService {
     const participantEmail = normalizeEmail(payload.email);
     const managerEmail = normalizeEmail(payload.manager_email);
     const programId = getApplicationProgramId(payload);
+
+    if (!payload.manager_email || !payload.manager_name) {
+      throw new ApiError(
+        HTTP_STATUS.BAD_REQUEST,
+        'Billing manager name and email are required for employer-funded registration.'
+      );
+    }
 
     const cohort = await cohortRepository.findActiveById(payload.cohort_id);
     if (!cohort) {
@@ -83,7 +103,7 @@ class EmployerFundedRegistrationService {
     }
 
     const cohortPrice = parseStoredPrice(cohort.price);
-    if (!Number.isFinite(cohortPrice)) {
+    if (!Number.isFinite(cohortPrice) || cohortPrice <= 0) {
       throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'Invalid cohort price.');
     }
 
@@ -137,7 +157,10 @@ class EmployerFundedRegistrationService {
 
       if (seat?.status === 'locked') {
         existingOpenInvoice = await invoiceRepository.findBySeatId(seat.id, { transaction });
-        if (existingOpenInvoice && ['created', 'sent'].includes(existingOpenInvoice.status)) {
+        if (
+          existingOpenInvoice &&
+          OPEN_EMPLOYER_INVOICE_STATUSES.includes(existingOpenInvoice.status)
+        ) {
           return;
         }
       }
@@ -269,7 +292,13 @@ class EmployerFundedRegistrationService {
         cohortName: cohort.name,
         metadata
       });
+
+      if (Math.round(Number(stripeResult.amountDue || 0) * 100) !== Math.round(cohortPrice * 100)) {
+        throw new Error('Stripe invoice amount does not match the selected cohort price.');
+      }
     } catch (error) {
+      console.error('[Employer Registration] Stripe invoice creation failed:', error.message);
+
       await sequelize.transaction(async (transaction) => {
         const lockedSeat = await seatRepository.findById(seat.id, {
           transaction,

@@ -4,6 +4,17 @@ const ApiError = require('../utils/apiError');
 const { HTTP_STATUS } = require('../constants/app.constants');
 const stripeCustomerRepository = require('../repositories/stripeCustomer.repository');
 
+const toPositiveMinorUnitAmount = (amount) => {
+  const numericAmount = Number(amount);
+  const minorUnitAmount = Math.round(numericAmount * 100);
+
+  if (!Number.isFinite(numericAmount) || minorUnitAmount <= 0) {
+    throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'Invoice amount must be greater than zero.');
+  }
+
+  return minorUnitAmount;
+};
+
 class StripeService {
   constructor() {
     this.client = null;
@@ -101,17 +112,10 @@ class StripeService {
     metadata
   }) {
     const stripe = this.getClient();
+    const invoiceAmount = toPositiveMinorUnitAmount(amount);
     const customerId = await this.findOrCreateManagerCustomer({
       email: managerEmail,
       name: managerName
-    });
-
-    await stripe.invoiceItems.create({
-      customer: customerId,
-      amount: Math.round(amount * 100),
-      currency,
-      description: `Cohort enrollment: ${cohortName}`,
-      metadata
     });
 
     const draftInvoice = await stripe.invoices.create({
@@ -122,16 +126,50 @@ class StripeService {
       auto_advance: false
     });
 
+    await stripe.invoiceItems.create({
+      customer: customerId,
+      invoice: draftInvoice.id,
+      amount: invoiceAmount,
+      currency,
+      description: `Cohort enrollment: ${cohortName}`,
+      metadata
+    });
+
+    const pricedDraftInvoice = await stripe.invoices.retrieve(draftInvoice.id);
+    const draftAmountDue = Number(
+      pricedDraftInvoice.amount_due ?? pricedDraftInvoice.total ?? 0
+    );
+
+    if (draftAmountDue <= 0) {
+      throw new ApiError(
+        HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        'Stripe invoice was created without a payable line item.'
+      );
+    }
+
     const finalizedInvoice = await stripe.invoices.finalizeInvoice(draftInvoice.id);
+    const finalizedAmountDue = Number(
+      finalizedInvoice.amount_due ?? finalizedInvoice.total ?? 0
+    );
+
+    if (finalizedAmountDue <= 0) {
+      throw new ApiError(
+        HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        'Stripe invoice finalized with a zero amount.'
+      );
+    }
+
     const sentInvoice = await stripe.invoices.sendInvoice(finalizedInvoice.id);
 
     return {
       customerId,
       invoiceId: sentInvoice.id,
-      status: 'sent',
+      status: 'invoice_requested',
+      stripeStatus: sentInvoice.status || null,
       hostedInvoiceUrl: sentInvoice.hosted_invoice_url || null,
       invoicePdfUrl: sentInvoice.invoice_pdf || null,
-      invoiceNumber: sentInvoice.number || null
+      invoiceNumber: sentInvoice.number || null,
+      amountDue: Number(sentInvoice.amount_due ?? finalizedAmountDue) / 100
     };
   }
 
