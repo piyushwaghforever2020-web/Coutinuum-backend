@@ -14,7 +14,7 @@ router.post(
 );
 
 router.post(
-  '/cohort/register',
+  '/applications/cohort/register',
   validate(cohortRegistrationValidation.registerCohort),
   cohortRegistrationController.registerCohort
 );
