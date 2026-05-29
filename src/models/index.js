@@ -12,6 +12,8 @@ const waitlistSubmissionModel = require('./waitlistSubmission.model');
 const waitlistReferralSourceModel = require('./waitlistReferralSource.model');
 const emailListSubscriptionModel = require('./emailListSubscription.model');
 const contacUsModel = require('./contacUs.model');
+const employerUserModel = require('./employerUser.model');
+const sponsorshipModel = require('./sponsorship.model');
 const programModel = require('./program.model');
 const cohortProgramModel = require('./cohortProgram.model');
 const seatModel = require('./seat.model');
@@ -31,6 +33,8 @@ const WaitlistSubmission = waitlistSubmissionModel(sequelize, DataTypes);
 const WaitlistReferralSource = waitlistReferralSourceModel(sequelize, DataTypes);
 const EmailListSubscription = emailListSubscriptionModel(sequelize, DataTypes);
 const ContactUs = contacUsModel(sequelize, DataTypes);
+const EmployerUser = employerUserModel(sequelize, DataTypes);
+const Sponsorship = sponsorshipModel(sequelize, DataTypes);
 const Program = programModel(sequelize, DataTypes);
 const CohortProgram = cohortProgramModel(sequelize, DataTypes);
 const Seat = seatModel(sequelize, DataTypes);
@@ -82,6 +86,41 @@ Program.belongsToMany(Cohort, {
   as: 'cohorts'
 });
 
+EmployerUser.hasMany(Sponsorship, {
+  foreignKey: 'employerUserId',
+  as: 'sponsorships'
+});
+
+Sponsorship.belongsTo(EmployerUser, {
+  foreignKey: 'employerUserId',
+  as: 'employer'
+});
+
+EmployerUser.hasMany(Invoice, {
+  foreignKey: 'employerUserId',
+  as: 'invoices'
+});
+
+Cohort.hasMany(Sponsorship, {
+  foreignKey: 'cohortId',
+  as: 'sponsorships'
+});
+
+Sponsorship.belongsTo(Cohort, {
+  foreignKey: 'cohortId',
+  as: 'cohort'
+});
+
+Program.hasMany(Sponsorship, {
+  foreignKey: 'programId',
+  as: 'sponsorships'
+});
+
+Sponsorship.belongsTo(Program, {
+  foreignKey: 'programId',
+  as: 'program'
+});
+
 Participant.hasMany(Payment, {
   foreignKey: 'participantId',
   as: 'payments'
@@ -122,6 +161,16 @@ Seat.belongsTo(Cohort, {
   as: 'cohort'
 });
 
+Sponsorship.hasMany(Seat, {
+  foreignKey: 'sponsorshipId',
+  as: 'seats'
+});
+
+Seat.belongsTo(Sponsorship, {
+  foreignKey: 'sponsorshipId',
+  as: 'sponsorship'
+});
+
 Seat.hasOne(Invoice, {
   foreignKey: 'seatId',
   as: 'invoice'
@@ -140,6 +189,21 @@ Invoice.belongsTo(Participant, {
 Invoice.belongsTo(Cohort, {
   foreignKey: 'cohortId',
   as: 'cohort'
+});
+
+Invoice.belongsTo(EmployerUser, {
+  foreignKey: 'employerUserId',
+  as: 'employer'
+});
+
+Sponsorship.hasOne(Invoice, {
+  foreignKey: 'sponsorshipId',
+  as: 'invoice'
+});
+
+Invoice.belongsTo(Sponsorship, {
+  foreignKey: 'sponsorshipId',
+  as: 'sponsorship'
 });
 
 Payment.belongsTo(Invoice, {
@@ -177,9 +241,29 @@ MagicLinkToken.belongsTo(Participant, {
   as: 'participant'
 });
 
+EmployerUser.hasMany(MagicLinkToken, {
+  foreignKey: 'employerUserId',
+  as: 'magicLinkTokens'
+});
+
+MagicLinkToken.belongsTo(EmployerUser, {
+  foreignKey: 'employerUserId',
+  as: 'employer'
+});
+
 MagicLinkToken.belongsTo(Cohort, {
   foreignKey: 'cohortId',
   as: 'cohort'
+});
+
+Sponsorship.hasMany(MagicLinkToken, {
+  foreignKey: 'sponsorshipId',
+  as: 'magicLinkTokens'
+});
+
+MagicLinkToken.belongsTo(Sponsorship, {
+  foreignKey: 'sponsorshipId',
+  as: 'sponsorship'
 });
 
 module.exports = {
@@ -196,6 +280,8 @@ module.exports = {
   WaitlistReferralSource,
   EmailListSubscription,
   ContactUs,
+  EmployerUser,
+  Sponsorship,
   Program,
   CohortProgram,
   Seat,

@@ -1,65 +1,47 @@
-const { INVOICE_STATUSES } = require('../constants/app.constants');
+const { SPONSORSHIP_STATUSES } = require('../constants/app.constants');
 
 module.exports = (sequelize, DataTypes) => {
-  const Invoice = sequelize.define(
-    'Invoice',
+  const Sponsorship = sequelize.define(
+    'Sponsorship',
     {
       id: {
         type: DataTypes.BIGINT,
         autoIncrement: true,
         primaryKey: true
       },
-      seatId: {
-        type: DataTypes.BIGINT,
-        allowNull: false,
-        unique: true,
-        field: 'seat_id'
-      },
       employerUserId: {
         type: DataTypes.BIGINT,
-        allowNull: true,
-        field: 'employer_user_id'
-      },
-      sponsorshipId: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        field: 'sponsorship_id'
-      },
-      participantId: {
-        type: DataTypes.BIGINT,
         allowNull: false,
-        field: 'participant_id'
+        field: 'employer_user_id'
       },
       cohortId: {
         type: DataTypes.BIGINT,
         allowNull: false,
         field: 'cohort_id'
       },
-      stripeCustomerId: {
-        type: DataTypes.STRING(255),
-        allowNull: false,
-        field: 'stripe_customer_id'
-      },
-      stripeInvoiceId: {
-        type: DataTypes.STRING(255),
-        allowNull: false,
-        unique: true,
-        field: 'stripe_invoice_id'
-      },
-      stripeInvoiceNumber: {
-        type: DataTypes.STRING(64),
+      programId: {
+        type: DataTypes.BIGINT,
         allowNull: true,
-        field: 'stripe_invoice_number'
+        field: 'program_id'
       },
-      managerName: {
-        type: DataTypes.STRING(150),
+      status: {
+        type: DataTypes.STRING(32),
         allowNull: false,
-        field: 'manager_name'
+        defaultValue: 'invoice_requested',
+        validate: {
+          isIn: [SPONSORSHIP_STATUSES]
+        }
       },
-      managerEmail: {
-        type: DataTypes.STRING(255),
+      totalSeats: {
+        type: DataTypes.INTEGER,
         allowNull: false,
-        field: 'manager_email'
+        field: 'total_seats'
+      },
+      usedSeats: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        field: 'used_seats'
       },
       amount: {
         type: DataTypes.DECIMAL(10, 2),
@@ -70,10 +52,21 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 'usd'
       },
-      status: {
-        type: DataTypes.ENUM(...INVOICE_STATUSES),
-        allowNull: false,
-        defaultValue: 'invoice_requested'
+      stripeCustomerId: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        field: 'stripe_customer_id'
+      },
+      stripeInvoiceId: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        unique: true,
+        field: 'stripe_invoice_id'
+      },
+      invoiceId: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        field: 'invoice_id'
       },
       hostedInvoiceUrl: {
         type: DataTypes.STRING(2048),
@@ -85,10 +78,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         field: 'invoice_pdf_url'
       },
-      sentAt: {
+      invoiceDueAt: {
         type: DataTypes.DATE,
         allowNull: true,
-        field: 'sent_at'
+        field: 'invoice_due_at'
       },
       paidAt: {
         type: DataTypes.DATE,
@@ -102,11 +95,11 @@ module.exports = (sequelize, DataTypes) => {
       }
     },
     {
-      tableName: 'invoices',
+      tableName: 'sponsorships',
       underscored: true,
       timestamps: true
     }
   );
 
-  return Invoice;
+  return Sponsorship;
 };

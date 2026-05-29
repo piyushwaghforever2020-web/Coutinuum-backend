@@ -11,6 +11,8 @@ const enquiryRoutes = require('./enquiry.routes');
 const { authenticateAdmin } = require('../middlewares/auth.middleware');
 const adminContactUsRoutes = require('./adminContactUs.routes');
 const magicLinkAuthRoutes = require('./magicLinkAuth.routes');
+const participantAuthRoutes = require('./participantAuth.routes');
+const sponsorshipRoutes = require('./sponsorship.routes');
 
 const router = express.Router();
 
@@ -18,6 +20,7 @@ router.use(applicationRoutes);
 router.use(enquiryRoutes);
 router.use(publicCohortsRoutes);
 router.use(adminContactUsRoutes);
+router.use(participantAuthRoutes);
 router.use('/auth', magicLinkAuthRoutes);
 router.use('/admin', adminMailRoutes);
 router.use('/admin/auth', adminAuthRoutes);
