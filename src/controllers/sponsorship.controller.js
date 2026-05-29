@@ -4,7 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 
 const createBlockSponsorship = asyncHandler(async (req, res) => {
   const data = await sponsorshipService.createBlockSponsorship(req.body);
-  return sendSuccess(res, 'Sponsorship invoice created successfully.', data, 201);
+  return sendSuccess(res, 'Sponsorship registration received successfully.', data, 201);
 });
 
 const getEmployerDashboard = asyncHandler(async (req, res) => {

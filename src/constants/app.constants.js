@@ -24,6 +24,7 @@ const PARTICIPANT_PAYMENT_STATUSES = Object.freeze([
   'failed',
   'refunded'
 ]);
+const SPONSERSHIP_CATEGORY = Object.freeze(['individual', 'block_seats', 'private_cohort']);
 const REGISTRATION_STATUSES = Object.freeze(['complete', 'incomplete']);
 const COHORT_STATUSES = Object.freeze(['active', 'full', 'closed']);
 const FINAL_COHORT_STATUSES = Object.freeze(['full', 'closed','open', 'draft','archived', 'active', 'inactive']);
@@ -41,6 +42,15 @@ const STRIPE_EVENTS = Object.freeze({
 });
 
 const EMPLOYER_FUNDED_FLOW = 'employer_funded_individual';
+
+const SPONSORSHIP_STATUSES = Object.freeze([
+  'invoice_requested',
+  'pending_payment',
+  'paid',
+  'failed',
+  'voided',
+  'cancelled'
+]);
 
 const HTTP_STATUS = Object.freeze({
   OK: 200,
@@ -66,7 +76,9 @@ module.exports = {
   FINAL_COHORT_STATUSES,
   STRIPE_EVENTS,
   EMPLOYER_FUNDED_FLOW,
+  SPONSORSHIP_STATUSES,
   HTTP_STATUS,
   MAGIC_LINK_ROLES,
-  MAGIC_LINK_PURPOSES
+  MAGIC_LINK_PURPOSES,
+  SPONSERSHIP_CATEGORY,
 };

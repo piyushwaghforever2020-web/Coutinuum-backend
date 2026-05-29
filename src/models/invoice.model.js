@@ -11,7 +11,7 @@ module.exports = (sequelize, DataTypes) => {
       },
       seatId: {
         type: DataTypes.BIGINT,
-        allowNull: false,
+        allowNull: true,
         unique: true,
         field: 'seat_id'
       },
@@ -27,7 +27,7 @@ module.exports = (sequelize, DataTypes) => {
       },
       participantId: {
         type: DataTypes.BIGINT,
-        allowNull: false,
+        allowNull: true,
         field: 'participant_id'
       },
       cohortId: {
@@ -37,12 +37,12 @@ module.exports = (sequelize, DataTypes) => {
       },
       stripeCustomerId: {
         type: DataTypes.STRING(255),
-        allowNull: false,
+        allowNull: true,
         field: 'stripe_customer_id'
       },
       stripeInvoiceId: {
         type: DataTypes.STRING(255),
-        allowNull: false,
+        allowNull: true,
         unique: true,
         field: 'stripe_invoice_id'
       },
@@ -84,6 +84,12 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(2048),
         allowNull: true,
         field: 'invoice_pdf_url'
+      },
+      isManualInvoice: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        field: 'is_manual_invoice'
       },
       sentAt: {
         type: DataTypes.DATE,

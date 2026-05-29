@@ -142,6 +142,27 @@ const sendEmployerPaymentReceivedEmail = async ({
   });
 };
 
+// -------- Sponsorship registration acknowledgement (manual payment) ----------
+const sendEmployerSponsorshipRegistrationAckEmail = async ({
+  employerEmail,
+  employerName,
+  cohortName,
+  totalSeats
+}) => {
+  await sendMail({
+    to: [{ email: employerEmail, name: employerName }],
+    subject: 'Sponsorship Request Received',
+    html: buildEmailCard({
+      iconType: 'success',
+      title: 'Sponsorship Request Received',
+      greeting: `Hello ${escapeHtml(employerName)},`,
+      messageHtml: `Thank you for your sponsorship request for <strong>${escapeHtml(cohortName)}</strong> covering <strong>${escapeHtml(String(totalSeats))}</strong> seat(s). Our sales team will contact you shortly to complete payment. Once payment is confirmed, you will receive an email with access to your sponsorship dashboard to assign seats to participants.`,
+      footer: 'If you did not submit this request, please contact support.'
+    }),
+    attachments: getEmailLogoAttachments()
+  });
+};
+
 // -------- Sponsorship Invoice + Dashboard Access (to employer) ----------
 const sendEmployerSponsorshipInvoiceEmail = async ({
   employerEmail,
@@ -214,5 +235,6 @@ module.exports = {
   sendEmployerFundingPendingEmail,
   sendEmployerPaymentReceivedEmail,
   sendEmployerSponsorshipInvoiceEmail,
+  sendEmployerSponsorshipRegistrationAckEmail,
   sendParticipantLoginCredentialsEmail
 };

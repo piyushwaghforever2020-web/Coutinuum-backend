@@ -9,16 +9,13 @@ const seatRepository = require('../repositories/seat.repository');
 const invoiceRepository = require('../repositories/invoice.repository');
 const employerUserRepository = require('../repositories/employerUser.repository');
 const sponsorshipRepository = require('../repositories/sponsorship.repository');
-const stripeService = require('./stripe.service');
 const magicLinkService = require('./magicLink.service');
 const ApiError = require('../utils/apiError');
-const {
-  HTTP_STATUS,
-  SPONSORSHIP_FLOW
-} = require('../constants/app.constants');
+const { HTTP_STATUS } = require('../constants/app.constants');
 const { getRegistrationStatusFromPaymentStatus } = require('../utils/participantStatus');
 const {
-  sendEmployerSponsorshipInvoiceEmail,
+  sendEmployerSponsorshipRegistrationAckEmail,
+  sendMagicLinkEmail,
   sendParticipantLoginCredentialsEmail
 } = require('../utils/helpers');
 const { generateTemporaryPassword } = require('../utils/password');
@@ -238,9 +235,6 @@ class SponsorshipService {
     }
 
     const amount = Number((cohortPrice * totalSeats).toFixed(2));
-    const invoiceDueAt = new Date(
-      Date.now() + env.stripe.invoiceDueDays * 24 * 60 * 60 * 1000
-    );
 
     let employerUser;
     let sponsorship;
@@ -366,7 +360,7 @@ class SponsorshipService {
           usedSeats: 0,
           amount,
           currency: env.stripe.currency,
-          invoiceDueAt
+          invoiceDueAt: null
         },
         { transaction }
       );
@@ -377,72 +371,11 @@ class SponsorshipService {
         sponsorshipId: sponsorship.id,
         status: 'locked',
         lockedAt: new Date(),
-        holdExpiresAt: invoiceDueAt
+        holdExpiresAt: null
       }));
 
       await seatRepository.bulkCreate(seatRows, { transaction });
     });
-
-    let stripeResult;
-    try {
-      stripeResult = await stripeService.createAndSendEmployerInvoice({
-        managerEmail: employerEmail,
-        managerName: payload.employer_name,
-        amount,
-        currency: env.stripe.currency,
-        cohortName: cohort.name,
-        metadata: {
-          flow: SPONSORSHIP_FLOW,
-          sponsorship_id: String(sponsorship.id),
-          employer_user_id: String(employerUser.id),
-          cohort_id: String(cohort.id),
-          program_id: programId ? String(programId) : '',
-          total_seats: String(totalSeats),
-          payment_type: 'employer_sponsorship'
-        }
-      });
-
-      if (Math.round(Number(stripeResult.amountDue || 0) * 100) !== Math.round(amount * 100)) {
-        throw new Error('Stripe invoice amount does not match the sponsorship seat price.');
-      }
-    } 
-    catch (error) {
-      console.error('[Sponsorship] Stripe invoice creation failed:', error.message);
-
-      await sequelize.transaction(async (transaction) => {
-        const lockedSponsorship = await sponsorshipRepository.findPlainById(sponsorship.id, {
-          transaction,
-          lock: {
-            level: transaction.LOCK.UPDATE,
-            of: sequelize.models.Sponsorship
-          }
-        });
-
-        if (lockedSponsorship && lockedSponsorship.status !== 'paid') {
-          await sponsorshipRepository.update(
-            lockedSponsorship,
-            { status: 'failed' },
-            { transaction }
-          );
-
-          await sequelize.models.Seat.update(
-            { status: 'released' },
-            {
-              where: {
-                sponsorshipId: lockedSponsorship.id,
-                status: 'locked'
-              },
-              transaction
-            }
-          );
-        }
-      });
-
-      throw new ApiError(
-        HTTP_STATUS.INTERNAL_SERVER_ERROR,
-        'Failed to create sponsorship invoice. Please try again.'
-      );
-    }
 
     let invoice;
     await sequelize.transaction(async (transaction) => {
@@ -454,29 +387,17 @@ class SponsorshipService {
         }
       });
 
-      await employerUserRepository.update(
-        employerUser,
-        {
-          stripeCustomerId: stripeResult.customerId
-        },
-        { transaction }
-      );
-
       invoice = await invoiceRepository.create(
         {
           employerUserId: employerUser.id,
           sponsorshipId: sponsorship.id,
           cohortId: cohort.id,
-          stripeCustomerId: stripeResult.customerId,
-          stripeInvoiceId: stripeResult.invoiceId,
-          stripeInvoiceNumber: stripeResult.invoiceNumber,
+          isManualInvoice: true,
           managerName: payload.employer_name,
           managerEmail: employerEmail,
           amount,
           currency: env.stripe.currency,
           status: 'invoice_requested',
-          hostedInvoiceUrl: stripeResult.hostedInvoiceUrl,
-          invoicePdfUrl: stripeResult.invoicePdfUrl,
           sentAt: new Date()
         },
         { transaction }
@@ -486,50 +407,157 @@ class SponsorshipService {
         lockedSponsorship,
         {
           status: 'invoice_requested',
-          stripeCustomerId: stripeResult.customerId,
-          stripeInvoiceId: stripeResult.invoiceId,
-          invoiceId: invoice.id,
-          hostedInvoiceUrl: stripeResult.hostedInvoiceUrl,
-          invoicePdfUrl: stripeResult.invoicePdfUrl
+          invoiceId: invoice.id
         },
         { transaction }
       );
     });
 
-    const employerMagicLink = await magicLinkService.generateMagicLink({
-      email: employerEmail,
-      role: 'employer',
-      employerUserId: employerUser.id,
-      sponsorshipId: sponsorship.id,
-      cohortId: cohort.id,
-      purpose: 'dashboard_access'
-    });
-
     try {
-      await sendEmployerSponsorshipInvoiceEmail({
+      await sendEmployerSponsorshipRegistrationAckEmail({
         employerEmail,
         employerName: payload.employer_name,
         cohortName: cohort.name,
-        totalSeats,
-        hostedInvoiceUrl: stripeResult.hostedInvoiceUrl,
-        dashboardUrl: employerMagicLink.magicLinkUrl
+        totalSeats
       });
     } catch (error) {
-      console.error('[Sponsorship] Invoice/dashboard email failed:', error.message);
+      console.error('[Sponsorship] Registration acknowledgement email failed:', error.message);
     }
 
     return {
       sponsorship_id: Number(sponsorship.id),
       employer_user_id: Number(employerUser.id),
       invoice_id: Number(invoice.id),
-      stripe_invoice_id: stripeResult.invoiceId,
       status: 'invoice_requested',
       total_seats: totalSeats,
       amount,
       currency: env.stripe.currency,
-      hosted_invoice_url: stripeResult.hostedInvoiceUrl,
-      dashboard_login_sent: true
+      dashboard_login_sent: false
     };
+  }
+
+  async markSponsorshipAsPaid(sponsorshipId, adminUser) {
+    const terminalStatuses = ['failed', 'voided', 'cancelled'];
+    const payableStatuses = ['invoice_requested', 'pending_payment'];
+
+    let result;
+
+    await sequelize.transaction(async (transaction) => {
+      const sponsorship = await sponsorshipRepository.findPlainById(sponsorshipId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Sponsorship
+        }
+      });
+
+      if (!sponsorship) {
+        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Sponsorship not found.');
+      }
+
+      if (sponsorship.status === 'paid') {
+        throw new ApiError(HTTP_STATUS.CONFLICT, 'Sponsorship is already marked as paid.');
+      }
+
+      if (terminalStatuses.includes(sponsorship.status)) {
+        throw new ApiError(
+          HTTP_STATUS.CONFLICT,
+          `Cannot mark sponsorship as paid while status is ${sponsorship.status}.`
+        );
+      }
+
+      if (!payableStatuses.includes(sponsorship.status)) {
+        throw new ApiError(
+          HTTP_STATUS.CONFLICT,
+          `Sponsorship cannot be marked as paid from status ${sponsorship.status}.`
+        );
+      }
+
+      const invoice = await invoiceRepository.findBySponsorshipId(sponsorship.id, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Invoice
+        }
+      });
+
+      const paidAt = new Date();
+
+      await sponsorshipRepository.update(
+        sponsorship,
+        {
+          status: 'paid',
+          paidAt
+        },
+        { transaction }
+      );
+
+      if (invoice) {
+        await invoiceRepository.update(
+          invoice,
+          {
+            status: 'paid',
+            paidAt
+          },
+          { transaction }
+        );
+      }
+
+      const [seatsUnlocked] = await sequelize.models.Seat.update(
+        {
+          status: 'available',
+          holdExpiresAt: null
+        },
+        {
+          where: {
+            sponsorshipId: sponsorship.id,
+            status: 'locked'
+          },
+          transaction
+        }
+      );
+
+      result = {
+        sponsorship_id: Number(sponsorship.id),
+        invoice_id: invoice ? Number(invoice.id) : null,
+        status: 'paid',
+        seats_unlocked: seatsUnlocked,
+        dashboard_login_sent: false
+      };
+    });
+
+    const sponsorship = await sponsorshipRepository.findById(sponsorshipId);
+    const employer = sponsorship?.employer;
+
+    if (employer) {
+      try {
+        const magicLink = await magicLinkService.generateMagicLink({
+          email: employer.email,
+          role: 'employer',
+          employerUserId: employer.id,
+          sponsorshipId: sponsorship.id,
+          cohortId: sponsorship.cohortId,
+          purpose: 'dashboard_access'
+        });
+
+        await sendMagicLinkEmail({
+          email: employer.email,
+          name: employer.name,
+          magicLinkUrl: magicLink.magicLinkUrl
+        });
+
+        result.dashboard_login_sent = true;
+      } catch (error) {
+        console.error('[Sponsorship] Dashboard magic link email failed:', error.message);
+      }
+    }
+
+    console.info('[Admin] Sponsorship marked paid', {
+      sponsorshipId: result.sponsorship_id,
+      adminId: adminUser?.id || null
+    });
+
+    return result;
   }
 
   async getEmployerDashboard(sponsorshipId, user) {
@@ -837,304 +865,7 @@ class SponsorshipService {
     return response;
   }
 
-  async syncRequestedStripeInvoice(stripeInvoice, stripeEventId, { markSent = false } = {}) {
-    const metadata = stripeInvoice?.metadata || {};
-    if (metadata.flow !== SPONSORSHIP_FLOW) {
-      return { processed: false, reason: 'unsupported_flow' };
-    }
-
-    const sponsorshipId = Number(metadata.sponsorship_id || 0);
-
-    return sequelize.transaction(async (transaction) => {
-      const sponsorship = sponsorshipId
-        ? await sponsorshipRepository.findPlainById(sponsorshipId, {
-            transaction,
-            lock: {
-              level: transaction.LOCK.UPDATE,
-              of: sequelize.models.Sponsorship
-            }
-          })
-        : await sponsorshipRepository.findPlainByStripeInvoiceId(stripeInvoice.id, {
-            transaction,
-            lock: {
-              level: transaction.LOCK.UPDATE,
-              of: sequelize.models.Sponsorship
-            }
-          });
-
-      if (!sponsorship) {
-        return { processed: false, ignored: true, reason: 'local_sponsorship_not_found_yet' };
-      }
-
-      if (['paid', 'failed', 'voided', 'cancelled'].includes(sponsorship.status)) {
-        return { processed: false, ignored: true, reason: `sponsorship_already_${sponsorship.status}` };
-      }
-
-      await sponsorshipRepository.update(
-        sponsorship,
-        {
-          status: 'invoice_requested',
-          stripeInvoiceId: stripeInvoice.id || sponsorship.stripeInvoiceId,
-          hostedInvoiceUrl: stripeInvoice.hosted_invoice_url || sponsorship.hostedInvoiceUrl,
-          invoicePdfUrl: stripeInvoice.invoice_pdf || sponsorship.invoicePdfUrl,
-          stripeEventId
-        },
-        { transaction }
-      );
-
-      const invoice = await invoiceRepository.findPlainByStripeInvoiceId(stripeInvoice.id, {
-        transaction
-      });
-
-      if (invoice && invoice.status !== 'paid') {
-        await invoiceRepository.update(
-          invoice,
-          {
-            status: 'invoice_requested',
-            stripeInvoiceNumber: stripeInvoice.number || invoice.stripeInvoiceNumber,
-            hostedInvoiceUrl: stripeInvoice.hosted_invoice_url || invoice.hostedInvoiceUrl,
-            invoicePdfUrl: stripeInvoice.invoice_pdf || invoice.invoicePdfUrl,
-            sentAt: markSent ? invoice.sentAt || new Date() : invoice.sentAt,
-            stripeEventId
-          },
-          { transaction }
-        );
-      }
-
-      return {
-        processed: true,
-        sponsorship_id: Number(sponsorship.id),
-        status: 'invoice_requested'
-      };
-    });
-  }
-
-  processCreatedStripeInvoice(stripeInvoice, stripeEventId) {
-    return this.syncRequestedStripeInvoice(stripeInvoice, stripeEventId);
-  }
-
-  processFinalizedStripeInvoice(stripeInvoice, stripeEventId) {
-    return this.syncRequestedStripeInvoice(stripeInvoice, stripeEventId);
-  }
-
-  processSentStripeInvoice(stripeInvoice, stripeEventId) {
-    return this.syncRequestedStripeInvoice(stripeInvoice, stripeEventId, { markSent: true });
-  }
-
-  async processPaidStripeInvoice(stripeInvoice, stripeEventId) {
-    const metadata = stripeInvoice?.metadata || {};
-    if (metadata.flow !== SPONSORSHIP_FLOW) {
-      return { processed: false, reason: 'unsupported_flow' };
-    }
-
-    const stripeAmountPaidInCents = Number(stripeInvoice.amount_paid || 0);
-    const stripeTotalInCents = Number(stripeInvoice.total ?? stripeInvoice.amount_due ?? 0);
-
-    if (
-      !Number.isFinite(stripeAmountPaidInCents) ||
-      !Number.isFinite(stripeTotalInCents) ||
-      stripeAmountPaidInCents <= 0 ||
-      stripeTotalInCents <= 0
-    ) {
-      return {
-        processed: false,
-        ignored: true,
-        reason: 'zero_amount_invoice_paid_event'
-      };
-    }
-
-    const sponsorshipId = Number(metadata.sponsorship_id || 0);
-
-    return sequelize.transaction(async (transaction) => {
-      const sponsorship = sponsorshipId
-        ? await sponsorshipRepository.findPlainById(sponsorshipId, {
-            transaction,
-            lock: {
-              level: transaction.LOCK.UPDATE,
-              of: sequelize.models.Sponsorship
-            }
-          })
-        : await sponsorshipRepository.findPlainByStripeInvoiceId(stripeInvoice.id, {
-            transaction,
-            lock: {
-              level: transaction.LOCK.UPDATE,
-              of: sequelize.models.Sponsorship
-            }
-          });
-
-      if (!sponsorship) {
-        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Local sponsorship record not found.');
-      }
-
-      if (sponsorship.status === 'paid') {
-        return { processed: false, duplicate: true };
-      }
-
-      const localAmountInCents = Math.round(Number(sponsorship.amount || 0) * 100);
-      if (
-        !Number.isFinite(localAmountInCents) ||
-        localAmountInCents <= 0 ||
-        stripeAmountPaidInCents < localAmountInCents
-      ) {
-        return {
-          processed: false,
-          ignored: true,
-          reason: 'invoice_paid_event_without_full_amount'
-        };
-      }
-
-      const invoice = await invoiceRepository.findPlainByStripeInvoiceId(stripeInvoice.id, {
-        transaction,
-        lock: {
-          level: transaction.LOCK.UPDATE,
-          of: sequelize.models.Invoice
-        }
-      });
-
-      const paidAt = new Date();
-      await sponsorshipRepository.update(
-        sponsorship,
-        {
-          status: 'paid',
-          paidAt,
-          stripeInvoiceId: stripeInvoice.id,
-          hostedInvoiceUrl: stripeInvoice.hosted_invoice_url || sponsorship.hostedInvoiceUrl,
-          invoicePdfUrl: stripeInvoice.invoice_pdf || sponsorship.invoicePdfUrl,
-          stripeEventId
-        },
-        { transaction }
-      );
-
-      if (invoice) {
-        await invoiceRepository.update(
-          invoice,
-          {
-            status: 'paid',
-            paidAt,
-            hostedInvoiceUrl: stripeInvoice.hosted_invoice_url || invoice.hostedInvoiceUrl,
-            invoicePdfUrl: stripeInvoice.invoice_pdf || invoice.invoicePdfUrl,
-            stripeEventId
-          },
-          { transaction }
-        );
-      }
-
-      await sequelize.models.Seat.update(
-        {
-          status: 'available',
-          holdExpiresAt: null
-        },
-        {
-          where: {
-            sponsorshipId: sponsorship.id,
-            status: 'locked'
-          },
-          transaction
-        }
-      );
-
-      return {
-        processed: true,
-        sponsorship_id: Number(sponsorship.id),
-        invoice_id: invoice ? Number(invoice.id) : null,
-        seats_unlocked: true
-      };
-    });
-  }
-
-  async processFailedStripeInvoice(stripeInvoice, stripeEventId) {
-    const metadata = stripeInvoice?.metadata || {};
-    if (metadata.flow !== SPONSORSHIP_FLOW) {
-      return { processed: false, reason: 'unsupported_flow' };
-    }
-
-    return this.markInvoiceTerminal(stripeInvoice, stripeEventId, 'failed');
-  }
-
-  async processVoidedStripeInvoice(stripeInvoice, stripeEventId) {
-    const metadata = stripeInvoice?.metadata || {};
-    if (metadata.flow !== SPONSORSHIP_FLOW) {
-      return { processed: false, reason: 'unsupported_flow' };
-    }
-
-    return this.markInvoiceTerminal(stripeInvoice, stripeEventId, 'voided');
-  }
-
-  async markInvoiceTerminal(stripeInvoice, stripeEventId, status) {
-    const metadata = stripeInvoice?.metadata || {};
-    const sponsorshipId = Number(metadata.sponsorship_id || 0);
-
-    return sequelize.transaction(async (transaction) => {
-      const sponsorship = sponsorshipId
-        ? await sponsorshipRepository.findPlainById(sponsorshipId, {
-            transaction,
-            lock: {
-              level: transaction.LOCK.UPDATE,
-              of: sequelize.models.Sponsorship
-            }
-          })
-        : await sponsorshipRepository.findPlainByStripeInvoiceId(stripeInvoice.id, {
-            transaction,
-            lock: {
-              level: transaction.LOCK.UPDATE,
-              of: sequelize.models.Sponsorship
-            }
-          });
-
-      if (!sponsorship) {
-        return { processed: false, ignored: true, reason: 'local_sponsorship_not_found' };
-      }
-
-      if (sponsorship.status === 'paid') {
-        return { processed: false, ignored: true, reason: 'already_paid' };
-      }
-
-      await sponsorshipRepository.update(
-        sponsorship,
-        {
-          status,
-          stripeEventId
-        },
-        { transaction }
-      );
-
-      const invoice = await invoiceRepository.findPlainByStripeInvoiceId(stripeInvoice.id, {
-        transaction
-      });
-
-      if (invoice && invoice.status !== 'paid') {
-        await invoiceRepository.update(
-          invoice,
-          {
-            status: 'failed',
-            stripeEventId
-          },
-          { transaction }
-        );
-      }
-
-      await sequelize.models.Seat.update(
-        {
-          status: 'released'
-        },
-        {
-          where: {
-            sponsorshipId: sponsorship.id,
-            status: {
-              [Op.in]: ['locked', 'available']
-            }
-          },
-          transaction
-        }
-      );
-
-      return {
-        processed: true,
-        sponsorship_id: Number(sponsorship.id),
-        status
-      };
-    });
-  }
 }
+
 
 module.exports = new SponsorshipService();
