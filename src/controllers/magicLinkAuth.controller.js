@@ -22,7 +22,7 @@ const verifyMagicLink = asyncHandler(async (req, res) => {
   let redirectUrl = '/';
 
   if (result.user.cohortId) {
-    redirectUrl = `/cohort/${result.user.cohortId}`;
+    redirectUrl = `/cohort/?id=${result.user.cohortId}`;
   }
 
   return sendSuccess(res, 'Magic link verified successfully.', {
