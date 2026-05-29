@@ -142,11 +142,99 @@ const sendEmployerPaymentReceivedEmail = async ({
   });
 };
 
+// -------- Sponsorship registration acknowledgement (manual payment) ----------
+const sendEmployerSponsorshipRegistrationAckEmail = async ({
+  employerEmail,
+  employerName,
+  cohortName,
+  totalSeats
+}) => {
+  await sendMail({
+    to: [{ email: employerEmail, name: employerName }],
+    subject: 'Sponsorship Request Received',
+    html: buildEmailCard({
+      iconType: 'success',
+      title: 'Sponsorship Request Received',
+      greeting: `Hello ${escapeHtml(employerName)},`,
+      messageHtml: `Thank you for your sponsorship request for <strong>${escapeHtml(cohortName)}</strong> covering <strong>${escapeHtml(String(totalSeats))}</strong> seat(s). Our sales team will contact you shortly to complete payment. Once payment is confirmed, you will receive an email with access to your sponsorship dashboard to assign seats to participants.`,
+      footer: 'If you did not submit this request, please contact support.'
+    }),
+    attachments: getEmailLogoAttachments()
+  });
+};
+
+// -------- Sponsorship Invoice + Dashboard Access (to employer) ----------
+const sendEmployerSponsorshipInvoiceEmail = async ({
+  employerEmail,
+  employerName,
+  cohortName,
+  totalSeats,
+  hostedInvoiceUrl,
+  dashboardUrl
+}) => {
+  await sendMail({
+    to: [{ email: employerEmail, name: employerName }],
+    subject: 'Sponsorship Invoice & Dashboard Access',
+    html: buildEmailCard({
+      iconType: 'success',
+      title: 'Your Sponsorship Is Ready',
+      greeting: `Hello ${escapeHtml(employerName)},`,
+      messageHtml: `Your sponsorship request for <strong>${escapeHtml(cohortName)}</strong> has been created for <strong>${escapeHtml(totalSeats)}</strong> seat(s). Please pay the invoice to unlock assignment. You can also access your sponsorship dashboard using the link below.`,
+      buttonLabel: 'Open Sponsorship Dashboard',
+      buttonUrl: dashboardUrl || hostedInvoiceUrl || '#',
+      footer: 'If needed, the invoice payment link is included in the same email thread.'
+    }),
+    attachments: getEmailLogoAttachments()
+  });
+};
+
+// -------- Participant Credentials (sponsorship seat assignment) ----------
+const sendParticipantLoginCredentialsEmail = async ({
+  participantEmail,
+  participantName,
+  cohortName,
+  temporaryPassword,
+  setPasswordUrl,
+  loginUrl
+}) => {
+  const hasSetPassword = Boolean(setPasswordUrl);
+  const primaryUrl = hasSetPassword ? setPasswordUrl : (loginUrl || '#');
+  const primaryLabel = hasSetPassword ? 'Set Your Password' : 'Open Participant Login';
+
+  const followUpHtml = hasSetPassword
+    ? `After setting your password, you can sign in from the participant login page.`
+    : `Use your temporary password and open the participant login page to continue.`;
+
+  await sendMail({
+    to: [{ email: participantEmail, name: participantName }],
+    subject: 'Your Cohort Login Credentials',
+    html: buildEmailCard({
+      iconType: 'success',
+      title: 'Your Access Is Ready',
+      greeting: `Hello ${escapeHtml(participantName)},`,
+      messageHtml: `You have been assigned a seat for <strong>${escapeHtml(cohortName || 'your cohort')}</strong>. ${followUpHtml}`,
+      ...(temporaryPassword && {
+        passwordBox: {
+          password: temporaryPassword,
+          hint: 'Keep this temporary password private.'
+        }
+      }),
+      buttonLabel: primaryLabel,
+      buttonUrl: primaryUrl,
+      footer: 'If you did not expect this email, please contact support.'
+    }),
+    attachments: getEmailLogoAttachments()
+  });
+};
+
 module.exports = {
   sendPaymentConfirmationEmail,
   sendMagicLinkEmail,
   sendPaymentFailedEmail,
   sendEmployerInvoiceSentEmail,
   sendEmployerFundingPendingEmail,
-  sendEmployerPaymentReceivedEmail
+  sendEmployerPaymentReceivedEmail,
+  sendEmployerSponsorshipInvoiceEmail,
+  sendEmployerSponsorshipRegistrationAckEmail,
+  sendParticipantLoginCredentialsEmail
 };

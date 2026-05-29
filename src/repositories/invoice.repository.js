@@ -30,6 +30,16 @@ class InvoiceRepository {
     });
   }
 
+  async findBySponsorshipId(sponsorshipId, options = {}) {
+    return Invoice.findOne({
+      where: {
+        sponsorshipId
+      },
+      order: [['createdAt', 'DESC']],
+      ...options
+    });
+  }
+
   async create(data, options = {}) {
     return Invoice.create(data, options);
   }

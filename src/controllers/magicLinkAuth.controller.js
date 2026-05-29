@@ -1,6 +1,11 @@
 const magicLinkService = require('../services/magicLink.service');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { MAGIC_LINK_PURPOSES } = require('../constants/app.constants');
+
+const SESSION_PURPOSES = MAGIC_LINK_PURPOSES.filter(
+  (purpose) => purpose === 'login' || purpose === 'dashboard_access'
+);
 
 /**
  * POST /auth/magic-link/verify
@@ -16,12 +21,20 @@ const asyncHandler = require('../utils/asyncHandler');
 const verifyMagicLink = asyncHandler(async (req, res) => {
   const { token } = req.body;
 
-  const result = await magicLinkService.verifyMagicLink(token);
+  const result = await magicLinkService.verifyMagicLink(token, {
+    allowedPurposes: SESSION_PURPOSES
+  });
 
   // Build redirect URL — point to the cohort the employer bought for the employee
   let redirectUrl = '/';
 
-  if (result.user.cohortId) {
+  if (
+    result.user.role === 'employer' &&
+    result.user.purpose === 'dashboard_access' &&
+    result.user.sponsorshipId
+  ) {
+    redirectUrl = `/employer/sponsorships/${result.user.sponsorshipId}`;
+  } else if (result.user.cohortId) {
     redirectUrl = `/cohort/?id=${result.user.cohortId}`;
   }
 
@@ -31,6 +44,8 @@ const verifyMagicLink = asyncHandler(async (req, res) => {
       email: result.user.email,
       role: result.user.role,
       participant_id: result.user.participantId,
+      employer_user_id: result.user.employerUserId,
+      sponsorship_id: result.user.sponsorshipId,
       cohort_id: result.user.cohortId
     },
     redirect_url: redirectUrl
