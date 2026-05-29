@@ -165,6 +165,24 @@ const sendEmployerSponsorshipRegistrationAckEmail = async ({
 };
 
 // -------- Sponsorship registration notification (admin) ----------
+const formatSponsorshipAmount = (amount, currency = 'usd') => {
+  const code = String(currency || 'usd').toUpperCase();
+
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: code
+    }).format(Number(amount));
+  } catch {
+    return `${amount} ${code}`;
+  }
+};
+
+const formatEmployerMessageHtml = (message) => {
+  const normalized = String(message).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  return escapeHtml(normalized).replace(/\n/g, '<br>');
+};
+
 const sendSponsorshipRegistrationNotification = async ({
   adminEmail,
   employerEmail,
@@ -176,17 +194,24 @@ const sendSponsorshipRegistrationNotification = async ({
   currency,
   message
 }) => {
+  if (!adminEmail) {
+    console.warn('[Sponsorship] Admin notification skipped: no admin email configured.');
+    return;
+  }
+
   const messageBlock = message
-    ? `<p><strong>Employer message:</strong><br>${escapeHtml(message).replace(/\n/g, '<br>')}</p>`
-    : '<p><em>No message was provided.</em></p>';
+    ? `<p><strong>Employer message:</strong><br>${formatEmployerMessageHtml(message)}</p>`
+    : '';
 
   const companyLine = companyName
     ? `<li><strong>Company:</strong> ${escapeHtml(companyName)}</li>`
     : '';
 
+  const formattedAmount = formatSponsorshipAmount(amount, currency);
+
   await sendMail({
     to: [{ email: adminEmail, name: 'Continuum Admin' }],
-    subject: 'New block sponsorship registration',
+    subject: `New block sponsorship: ${String(cohortName).replace(/[\r\n]+/g, ' ').trim()}`,
     html: buildEmailCard({
       iconType: 'success',
       title: 'New Block Sponsorship Request',
@@ -198,12 +223,12 @@ const sendSponsorshipRegistrationNotification = async ({
           ${companyLine}
           <li><strong>Cohort:</strong> ${escapeHtml(cohortName)}</li>
           <li><strong>Seats:</strong> ${escapeHtml(String(totalSeats))}</li>
-          <li><strong>Amount:</strong> ${escapeHtml(String(amount))} ${escapeHtml(String(currency || 'usd').toUpperCase())}</li>
+          <li><strong>Amount:</strong> ${escapeHtml(formattedAmount)}</li>
         </ul>
-        <p>Please follow up with the sales team and mark the sponsorship as paid in the admin panel once payment is received.</p>
         ${messageBlock}
+        <p>Please follow up with the sales team and mark the sponsorship as paid in the admin panel once payment is received.</p>
       `,
-      footer: 'You can ignore this email if you did not expect this notification.'
+      footer: 'This is an automated notification from Continuum.'
     }),
     attachments: getEmailLogoAttachments()
   });
