@@ -59,6 +59,7 @@ const mapAdminListItem = (sponsorship) => ({
   updated_at: sponsorship.updatedAt,
   employer: mapEmployer(sponsorship.employer),
   cohort: mapCohort(sponsorship.cohort),
+  message: sponsorship.message || null,
   program: mapProgram(sponsorship.program)
 });
 

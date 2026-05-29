@@ -42,7 +42,7 @@ class MagicLinkService {
     const hashedToken = hashToken(rawToken);
 
     const expiresAt = new Date(
-      Date.now() + env.magicLink.expiresMin * 60 * 1000
+      Date.now() + env.magicLink.expiresDays * 24 * 60 * 60 * 1000
     );
 
     const createOptions = transaction ? { transaction } : {};
@@ -100,13 +100,6 @@ class MagicLinkService {
       throw new ApiError(HTTP_STATUS.UNAUTHORIZED, 'Invalid or expired magic link.');
     }
 
-    if (tokenRecord.usedAt) {
-      throw new ApiError(
-        HTTP_STATUS.UNAUTHORIZED,
-        'This magic link has already been used. Please request a new one.'
-      );
-    }
-
     if (new Date(tokenRecord.expiresAt) <= new Date()) {
       throw new ApiError(
         HTTP_STATUS.UNAUTHORIZED,
@@ -138,9 +131,6 @@ class MagicLinkService {
         'This magic link is not valid for this access type.'
       );
     }
-
-    // Mark token as used (single-use)
-    await magicLinkTokenRepository.markUsed(tokenRecord);
 
     // Issue a session JWT
     const sessionPayload = {

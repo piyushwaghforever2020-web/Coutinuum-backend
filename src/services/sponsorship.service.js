@@ -16,11 +16,17 @@ const { getRegistrationStatusFromPaymentStatus } = require('../utils/participant
 const {
   sendEmployerSponsorshipRegistrationAckEmail,
   sendMagicLinkEmail,
-  sendParticipantLoginCredentialsEmail
+  sendParticipantLoginCredentialsEmail,
+  sendSponsorshipRegistrationNotification
 } = require('../utils/helpers');
 const { generateTemporaryPassword } = require('../utils/password');
 
 const normalizeEmail = (email) => String(email).trim().toLowerCase();
+
+const normalizeOptionalMessage = (message) => {
+  const trimmed = typeof message === 'string' ? message.trim() : '';
+  return trimmed.length ? trimmed : null;
+};
 
 const parseStoredPrice = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -213,6 +219,7 @@ class SponsorshipService {
     const employerEmail = normalizeEmail(payload.employer_email);
     const programId = getProgramId(payload);
     const totalSeats = Number(payload.total_seats);
+    const employerMessage = normalizeOptionalMessage(payload.message);
 
     const cohort = await cohortRepository.findActiveById(payload.cohort_id);
     if (!cohort) {
@@ -360,6 +367,8 @@ class SponsorshipService {
           usedSeats: 0,
           amount,
           currency: env.stripe.currency,
+          sponsershipCategory: 'block_seats',
+          message: employerMessage,
           invoiceDueAt: null
         },
         { transaction }
@@ -421,7 +430,23 @@ class SponsorshipService {
         totalSeats
       });
     } catch (error) {
-      console.error('[Sponsorship] Registration acknowledgement email failed:', error.message);
+      console.error('[Sponsorship] Employer acknowledgement email failed:', error.message);
+    }
+
+    try {
+      await sendSponsorshipRegistrationNotification({
+        adminEmail: env.sponsorshipAdminNotificationEmail,
+        employerEmail,
+        employerName: payload.employer_name,
+        companyName: payload.company_name || null,
+        cohortName: cohort.name,
+        totalSeats,
+        amount,
+        currency: env.stripe.currency,
+        message: employerMessage
+      });
+    } catch (error) {
+      console.error('[Sponsorship] Admin notification email failed:', error.message);
     }
 
     return {

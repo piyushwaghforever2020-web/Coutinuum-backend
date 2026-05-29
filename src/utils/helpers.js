@@ -1,5 +1,6 @@
 const sendMail = require('./sendMail');
 const { buildEmailCard, getEmailLogoAttachments, escapeHtml } = require('./emailTemplate');
+const env = require('../config/env');
 
 // -------- Payment Success ----------
 const sendPaymentConfirmationEmail = async ({
@@ -44,7 +45,7 @@ const sendMagicLinkEmail = async ({
       iconType: null,
       title: 'Your Login Link',
       greeting: `Hello ${escapeHtml(name)},`,
-      messageHtml: `Click the button below to access your account. This link expires in 30 minutes.`,
+      messageHtml: `Click the button below to access your account. This link expires in ${env.magicLink.expiresDays} day${env.magicLink.expiresDays === 1 ? '' : 's'}.`,
       buttonLabel: 'Access Your Account →',
       buttonUrl: magicLinkUrl,
       footer: 'If you did not request this link, you can safely ignore this email.'
@@ -163,6 +164,51 @@ const sendEmployerSponsorshipRegistrationAckEmail = async ({
   });
 };
 
+// -------- Sponsorship registration notification (admin) ----------
+const sendSponsorshipRegistrationNotification = async ({
+  adminEmail,
+  employerEmail,
+  employerName,
+  companyName,
+  cohortName,
+  totalSeats,
+  amount,
+  currency,
+  message
+}) => {
+  const messageBlock = message
+    ? `<p><strong>Employer message:</strong><br>${escapeHtml(message).replace(/\n/g, '<br>')}</p>`
+    : '<p><em>No message was provided.</em></p>';
+
+  const companyLine = companyName
+    ? `<li><strong>Company:</strong> ${escapeHtml(companyName)}</li>`
+    : '';
+
+  await sendMail({
+    to: [{ email: adminEmail, name: 'Continuum Admin' }],
+    subject: 'New block sponsorship registration',
+    html: buildEmailCard({
+      iconType: 'success',
+      title: 'New Block Sponsorship Request',
+      greeting: 'Hello Admin,',
+      messageHtml: `
+        <p>A new block sponsorship registration was submitted.</p>
+        <ul style="text-align:left;margin:16px 0;padding-left:20px;">
+          <li><strong>Employer:</strong> ${escapeHtml(employerName)} (${escapeHtml(employerEmail)})</li>
+          ${companyLine}
+          <li><strong>Cohort:</strong> ${escapeHtml(cohortName)}</li>
+          <li><strong>Seats:</strong> ${escapeHtml(String(totalSeats))}</li>
+          <li><strong>Amount:</strong> ${escapeHtml(String(amount))} ${escapeHtml(String(currency || 'usd').toUpperCase())}</li>
+        </ul>
+        <p>Please follow up with the sales team and mark the sponsorship as paid in the admin panel once payment is received.</p>
+        ${messageBlock}
+      `,
+      footer: 'You can ignore this email if you did not expect this notification.'
+    }),
+    attachments: getEmailLogoAttachments()
+  });
+};
+
 // -------- Sponsorship Invoice + Dashboard Access (to employer) ----------
 const sendEmployerSponsorshipInvoiceEmail = async ({
   employerEmail,
@@ -236,5 +282,6 @@ module.exports = {
   sendEmployerPaymentReceivedEmail,
   sendEmployerSponsorshipInvoiceEmail,
   sendEmployerSponsorshipRegistrationAckEmail,
-  sendParticipantLoginCredentialsEmail
+  sendParticipantLoginCredentialsEmail,
+  sendSponsorshipRegistrationNotification
 };

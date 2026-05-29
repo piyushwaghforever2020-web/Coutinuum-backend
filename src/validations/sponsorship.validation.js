@@ -26,6 +26,7 @@ const createBlockSponsorship = {
     cohort_id: Joi.number().integer().positive().required(),
     program_id: Joi.number().integer().positive().optional().allow(null, ''),
     programm_id: Joi.number().integer().positive().optional().allow(null, ''),
+    message: Joi.string().trim().max(2000).allow('', null),
     total_seats: Joi.number().integer().min(1).max(500).required()
   })
 };

@@ -20,6 +20,7 @@ const envSchema = Joi.object({
   JWT_EXPIRES_IN: Joi.string().default('1d'),
   BCRYPT_SALT_ROUNDS: Joi.number().integer().min(8).max(15).default(10),
   DEFAULT_ADMIN_EMAIL: Joi.string().email().default('admin@continuum.com'),
+  SPONSORSHIP_ADMIN_NOTIFICATION_EMAIL: Joi.string().email().allow('').default('coutinumm.app@yopmail.com'),
   DEFAULT_ADMIN_PASSWORD: Joi.string().min(8).default('Admin@123'),
   STRIPE_SECRET_KEY: Joi.string().allow('').default(''),
   STRIPE_WEBHOOK_SECRET: Joi.string().allow('').default(''),
@@ -37,7 +38,7 @@ const envSchema = Joi.object({
   SMTP_PASSWORD: Joi.string().allow('').default(''),
   SMTP_FROM_EMAIL: Joi.string().email().allow('').default(''),
   FRONTEND_URL: Joi.string().uri().default('http://coutinuum.codingserver.com'),
-  MAGIC_LINK_EXPIRES_MIN: Joi.number().integer().min(15).max(60).default(30),
+  MAGIC_LINK_EXPIRES_DAYS: Joi.number().integer().min(1).max(30).default(2),
   MAGIC_LINK_SECRET: Joi.string().min(16).default('')
 }).unknown();
 
@@ -69,6 +70,8 @@ module.exports = Object.freeze({
   jwtExpiresIn: value.JWT_EXPIRES_IN,
   bcryptSaltRounds: value.BCRYPT_SALT_ROUNDS,
   defaultAdminEmail: value.DEFAULT_ADMIN_EMAIL,
+  sponsorshipAdminNotificationEmail:
+    value.SPONSORSHIP_ADMIN_NOTIFICATION_EMAIL || value.DEFAULT_ADMIN_EMAIL,
   defaultAdminPassword: value.DEFAULT_ADMIN_PASSWORD,
   stripe: {
     secretKey: value.STRIPE_SECRET_KEY,
@@ -93,7 +96,7 @@ module.exports = Object.freeze({
   },
   frontendUrl: value.FRONTEND_URL,
   magicLink: {
-    expiresMin: value.MAGIC_LINK_EXPIRES_MIN,
+    expiresDays: value.MAGIC_LINK_EXPIRES_DAYS,
     secret: value.MAGIC_LINK_SECRET || value.JWT_SECRET
   }
 });

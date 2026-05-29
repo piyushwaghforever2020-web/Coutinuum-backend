@@ -1,4 +1,4 @@
-const { ENUM } = require('sequelize');
+const { ENUM, TEXT } = require('sequelize');
 const { SPONSORSHIP_STATUSES , SPONSERSHIP_CATEGORY} = require('../constants/app.constants');
 
 module.exports = (sequelize, DataTypes) => {
@@ -93,6 +93,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(255),
         allowNull: true,
         field: 'stripe_event_id'
+      },
+      message : {
+        type : TEXT,
+        allowNull : true,
+        field : 'message'
       },
       sponsershipCategory:{
         type : DataTypes.ENUM(...SPONSERSHIP_CATEGORY),
