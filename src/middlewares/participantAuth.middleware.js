@@ -7,7 +7,7 @@ const ApiError = require('../utils/apiError');
  * Middleware that authenticates participants/employers using the session JWT
  * issued after magic link verification.
  *
- * Attaches `req.user` with { email, role, participantId, cohortId, purpose }.
+ * Attaches `req.user` with { email, role, participantId, employerUserId, sponsorshipId, cohortId, purpose }.
  */
 const authenticateUser = async (req, res, next) => {
   try {
@@ -27,6 +27,8 @@ const authenticateUser = async (req, res, next) => {
       email: decoded.email,
       role: decoded.role,
       participantId: decoded.participantId || null,
+      employerUserId: decoded.employerUserId || null,
+      sponsorshipId: decoded.sponsorshipId || null,
       cohortId: decoded.cohortId || null,
       purpose: decoded.purpose || null
     };

@@ -11,18 +11,33 @@ module.exports = (sequelize, DataTypes) => {
       },
       participantId: {
         type: DataTypes.BIGINT,
-        allowNull: false,
+        allowNull: true,
         field: 'participant_id'
+      },
+      sponsorshipId: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        field: 'sponsorship_id'
       },
       cohortId: {
         type: DataTypes.BIGINT,
         allowNull: false,
         field: 'cohort_id'
       },
+      programId: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        field: 'program_id'
+      },
       participantEmail: {
         type: DataTypes.STRING(255),
-        allowNull: false,
+        allowNull: true,
         field: 'participant_email'
+      },
+      assignedEmail: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        field: 'assigned_email'
       },
       status: {
         type: DataTypes.ENUM(...SEAT_STATUSES),
@@ -44,6 +59,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DATE,
         allowNull: true,
         field: 'assigned_at'
+      },
+      holdExpiresAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        field: 'hold_expires_at'
       }
     },
     {

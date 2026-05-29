@@ -113,6 +113,7 @@ class StripeService {
   }) {
     const stripe = this.getClient();
     const invoiceAmount = toPositiveMinorUnitAmount(amount);
+    
     const customerId = await this.findOrCreateManagerCustomer({
       email: managerEmail,
       name: managerName

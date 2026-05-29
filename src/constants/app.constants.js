@@ -1,8 +1,13 @@
 const PAYMENT_STATUSES = Object.freeze(['pending', 'paid', 'failed', 'refunded']);
 const MAGIC_LINK_ROLES = Object.freeze(['participant', 'employer']);
-const MAGIC_LINK_PURPOSES = Object.freeze(['login', 'file_download', 'dashboard_access']);
+const MAGIC_LINK_PURPOSES = Object.freeze([
+  'login',
+  'file_download',
+  'dashboard_access',
+  'set_password'
+]);
 const PAYMENT_TYPES = Object.freeze(['self_pay', 'employer_funded']);
-const SEAT_STATUSES = Object.freeze(['locked', 'available', 'assigned', 'active']);
+const SEAT_STATUSES = Object.freeze(['locked', 'available', 'assigned', 'active', 'released']);
 const INVOICE_STATUSES = Object.freeze([
   'invoice_requested',
   'invoice_sent',

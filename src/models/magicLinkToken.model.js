@@ -35,6 +35,24 @@ module.exports = (sequelize, DataTypes) => {
           key: 'id'
         }
       },
+      employerUserId: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        field: 'employer_user_id',
+        references: {
+          model: 'employer_users',
+          key: 'id'
+        }
+      },
+      sponsorshipId: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        field: 'sponsorship_id',
+        references: {
+          model: 'sponsorships',
+          key: 'id'
+        }
+      },
       cohortId: {
         type: DataTypes.BIGINT,
         allowNull: true,
