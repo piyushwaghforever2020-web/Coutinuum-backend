@@ -233,6 +233,14 @@ class SponsorshipService {
       );
     }
 
+    //if availbale seats are less than requested seats, block the sponsorship
+    if(Number(cohort.seatLimit) - Number(cohort.seatsFilled) < totalSeats){
+      throw new ApiError(
+        HTTP_STATUS.CONFLICT,
+        'Only ' + (Number(cohort.seatLimit) - Number(cohort.seatsFilled)) + ' seats are available in this cohort. Please reduce the number of seats requested or choose a different cohort.'
+      );
+    }
+
     ensureProgramBelongsToCohort(cohort, programId);
 
     const cohortPrice = parseStoredPrice(cohort.price);

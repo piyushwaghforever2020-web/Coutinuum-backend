@@ -37,7 +37,7 @@ const envSchema = Joi.object({
   SMTP_USER: Joi.string().allow('').default(''),
   SMTP_PASSWORD: Joi.string().allow('').default(''),
   SMTP_FROM_EMAIL: Joi.string().email().allow('').default(''),
-  FRONTEND_URL: Joi.string().uri().default('http://coutinuum.codingserver.com'),
+  FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
   MAGIC_LINK_EXPIRES_DAYS: Joi.number().integer().min(1).max(30).default(2),
   MAGIC_LINK_SECRET: Joi.string().min(16).default('')
 }).unknown();
