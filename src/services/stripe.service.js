@@ -42,6 +42,7 @@ class StripeService {
       mode: 'payment',
       success_url: payload.successUrl,
       cancel_url: payload.cancelUrl,
+      expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
       customer_email: payload.customerEmail,
       metadata: {
         participant_id: String(payload.participantId),
@@ -68,6 +69,11 @@ class StripeService {
     return stripe.checkout.sessions.retrieve(sessionId);
   }
 
+  async expireCheckoutSession(sessionId) {
+    const stripe = this.getClient();
+    return stripe.checkout.sessions.expire(sessionId);
+  }
+
   async retrieveCheckoutSessionByPaymentIntent(paymentIntentId) {
     const stripe = this.getClient();
     const sessions = await stripe.checkout.sessions.list({
@@ -75,6 +81,20 @@ class StripeService {
       limit: 1
     });
     return sessions.data[0] || null;
+  }
+
+  async refundPaymentIntent(paymentIntentId, { idempotencyKey } = {}) {
+    const stripe = this.getClient();
+    return stripe.refunds.create(
+      {
+        payment_intent: paymentIntentId
+      },
+      idempotencyKey
+        ? {
+            idempotencyKey
+          }
+        : undefined
+    );
   }
 
   async findOrCreateManagerCustomer({ email, name }) {

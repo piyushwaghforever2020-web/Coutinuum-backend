@@ -45,6 +45,13 @@ const handleWebhook = asyncHandler(async (req, res) => {
       result
     });
   } 
+  else if (event.type === STRIPE_EVENTS.CHECKOUT_SESSION_EXPIRED) {
+    const result = await applicationService.processExpiredCheckoutSession(event.data.object);
+    console.log('[Stripe Webhook] Expired checkout session processed.', {
+      event_id: event.id,
+      result
+    });
+  }
    // new one block
   else if (event.type === STRIPE_EVENTS.PAYMENT_INTENT_PAYMENT_FAILED) {
     const result = await applicationService.processFailedPaymentIntent(event.data.object);

@@ -31,6 +31,7 @@ const FINAL_COHORT_STATUSES = Object.freeze(['full', 'closed','open', 'draft','a
 const STRIPE_EVENTS = Object.freeze({
   CHECKOUT_SESSION_COMPLETED: 'checkout.session.completed',
   CHECKOUT_SESSION_ASYNC_PAYMENT_FAILED: 'checkout.session.async_payment_failed',
+  CHECKOUT_SESSION_EXPIRED: 'checkout.session.expired',
   PAYMENT_INTENT_SUCCEEDED: 'payment_intent.succeeded',
   PAYMENT_INTENT_PAYMENT_FAILED: 'payment_intent.payment_failed',
   INVOICE_CREATED: 'invoice.created',

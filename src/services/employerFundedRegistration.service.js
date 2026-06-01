@@ -120,9 +120,11 @@ class EmployerFundedRegistrationService {
         }
       });
 
-      const reservedSeats = await seatRepository.countReservedByCohort(lockedCohort.id, {
-        transaction
-      });
+      const reservedSeats = await seatRepository.countEffectiveReservedCapacityByCohort(
+        lockedCohort.id,
+        {},
+        { transaction }
+      );
 
       participant = await participantRepository.findByEmailAndCohort(
         participantEmail,
@@ -179,13 +181,15 @@ class EmployerFundedRegistrationService {
           );
         }
 
-        const paidProgramSeats = await participantRepository.countEnrolledByCohortAndProgram(
+        const reservedProgramSeats =
+          await seatRepository.countEffectiveReservedCapacityByCohortAndProgram(
           lockedCohort.id,
           programId,
+          {},
           { transaction }
         );
 
-        if (isProgramFullForSeatCount(programMapping, paidProgramSeats)) {
+        if (isProgramFullForSeatCount(programMapping, reservedProgramSeats)) {
           throw new ApiError(HTTP_STATUS.CONFLICT, 'No seats available for this program.');
         }
       }

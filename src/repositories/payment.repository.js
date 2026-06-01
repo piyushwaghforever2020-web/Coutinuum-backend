@@ -132,6 +132,44 @@ class PaymentRepository {
     });
   }
 
+  async findLatestPendingByParticipantAndCohort(participantId, cohortId, options = {}) {
+    return Payment.findOne({
+      where: {
+        participantId,
+        cohortId,
+        status: 'pending'
+      },
+      order: [['createdAt', 'DESC']],
+      ...options
+    });
+  }
+
+  async hasOtherPendingByParticipantAndCohort(
+    participantId,
+    cohortId,
+    excludedPaymentId,
+    options = {}
+  ) {
+    const where = {
+      participantId,
+      cohortId,
+      status: 'pending'
+    };
+
+    if (excludedPaymentId) {
+      where.id = {
+        [Op.ne]: excludedPaymentId
+      };
+    }
+
+    const pendingCount = await Payment.count({
+      where,
+      ...options
+    });
+
+    return pendingCount > 0;
+  }
+
   async findLatestPaidByParticipantAndCohort(participantId, cohortId, options = {}) {
     return Payment.findOne({
       where: {

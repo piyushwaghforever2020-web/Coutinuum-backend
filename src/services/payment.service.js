@@ -2,6 +2,7 @@ const { sequelize } = require('../models');
 const cohortRepository = require('../repositories/cohort.repository');
 const paymentRepository = require('../repositories/payment.repository');
 const participantRepository = require('../repositories/participant.repository');
+const seatRepository = require('../repositories/seat.repository');
 const { buildPaginationMeta, getPagination } = require('../utils/pagination');
 const { getRegistrationStatusFromPaymentStatus } = require('../utils/participantStatus');
 const ApiError = require('../utils/apiError');
@@ -118,6 +119,22 @@ class PaymentService {
           },
           { transaction }
         );
+
+        const seat = await seatRepository.findByParticipantAndCohort(
+          payment.participant.id,
+          payment.cohortId,
+          {
+            transaction,
+            lock: {
+              level: transaction.LOCK.UPDATE,
+              of: sequelize.models.Seat
+            }
+          }
+        );
+
+        if (seat && ['locked', 'assigned', 'active'].includes(seat.status)) {
+          await seatRepository.releaseExpiredHold(seat, { transaction });
+        }
 
         const cohort = await cohortRepository.findById(payment.cohortId, {
           transaction,

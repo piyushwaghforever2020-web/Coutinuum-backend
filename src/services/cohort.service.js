@@ -1,5 +1,6 @@
 const cohortRepository = require('../repositories/cohort.repository');
 const participantRepository = require('../repositories/participant.repository');
+const seatRepository = require('../repositories/seat.repository');
 const {
   getParticipantPaymentStatus,
   getRegistrationStatusFromPaymentStatus
@@ -310,7 +311,8 @@ class CohortService {
 
     const seatLimit = Number(cohort.seatLimit);
     const seatsFilled = Number(cohort.seatsFilled);
-    const seatsRemaining = Math.max(seatLimit - seatsFilled, 0);
+    const reservedSeats = await seatRepository.countEffectiveReservedCapacityByCohort(cohort.id);
+    const seatsRemaining = Math.max(seatLimit - reservedSeats, 0);
     const seatAvailable =
       Boolean(cohort.isActive) &&
       (cohort.status === 'active' || cohort.status === 'open') &&
@@ -323,6 +325,7 @@ class CohortService {
       seats_remaining: seatsRemaining,
       seat_limit: seatLimit,
       seats_filled: seatsFilled,
+      seats_reserved: reservedSeats,
       status: cohort.status,
       is_active: Boolean(cohort.isActive),
       is_draft: Boolean(cohort.isDraft)

@@ -1,5 +1,4 @@
 const bcrypt = require('bcrypt');
-const { Op } = require('sequelize');
 const { sequelize } = require('../models');
 const env = require('../config/env');
 const cohortRepository = require('../repositories/cohort.repository');
@@ -247,11 +246,13 @@ class SponsorshipService {
       );
     }
 
-    //if availbale seats are less than requested seats, block the sponsorship
-    if(Number(cohort.seatLimit) - Number(cohort.seatsFilled) < totalSeats){
+    const initiallyReservedSeats =
+      await seatRepository.countEffectiveReservedCapacityByCohort(cohort.id);
+    // If available seats are less than requested seats, block the sponsorship.
+    if(Number(cohort.seatLimit) - Number(initiallyReservedSeats) < totalSeats){
       throw new ApiError(
         HTTP_STATUS.CONFLICT,
-        'Only ' + (Number(cohort.seatLimit) - Number(cohort.seatsFilled)) + ' seats are available in this cohort. Please reduce the number of seats requested or choose a different cohort.'
+        'Only ' + (Number(cohort.seatLimit) - Number(initiallyReservedSeats)) + ' seats are available in this cohort. Please reduce the number of seats requested or choose a different cohort.'
       );
     }
 
@@ -284,32 +285,13 @@ class SponsorshipService {
         );
       }
 
-      const reservedSeats = await seatRepository.countReservedByCohortExcludingUnpaidSponsorship(
+      const reservedSeats = await seatRepository.countEffectiveReservedCapacityByCohort(
         lockedCohort.id,
+        {},
         { transaction }
       );
 
-      const paidParticipantSeats = await participantRepository.countEnrolledByCohort(
-        lockedCohort.id,
-        { transaction }
-      );
-
-      const participantSeatRows = await sequelize.models.Seat.count({
-        where: {
-          cohortId: lockedCohort.id,
-          participantId: {
-            [Op.ne]: null
-          },
-          status: {
-            [Op.in]: ['assigned', 'active']
-          }
-        },
-        transaction
-      });
-
-      const capacityUsed = reservedSeats + Math.max(0, paidParticipantSeats - participantSeatRows);
-
-      if (capacityUsed + totalSeats > Number(lockedCohort.seatLimit)) {
+      if (reservedSeats + totalSeats > Number(lockedCohort.seatLimit)) {
         throw new ApiError(HTTP_STATUS.CONFLICT, 'Not enough cohort seats are available.');
       }
 
@@ -333,38 +315,17 @@ class SponsorshipService {
           );
         }
 
-        const reservedProgramSeats = await seatRepository.countReservedByCohortAndProgramExcludingUnpaidSponsorship(
+        const reservedProgramSeats =
+          await seatRepository.countEffectiveReservedCapacityByCohortAndProgram(
           lockedCohort.id,
           programId,
+          {},
           { transaction }
         );
-
-        const paidProgramSeats = await participantRepository.countEnrolledByCohortAndProgram(
-          lockedCohort.id,
-          programId,
-          { transaction }
-        );
-
-        const participantProgramSeatRows = await sequelize.models.Seat.count({
-          where: {
-            cohortId: lockedCohort.id,
-            programId,
-            participantId: {
-              [Op.ne]: null
-            },
-            status: {
-              [Op.in]: ['assigned', 'active']
-            }
-          },
-          transaction
-        });
-
-        const programCapacityUsed =
-          reservedProgramSeats + Math.max(0, paidProgramSeats - participantProgramSeatRows);
 
         if (
           Number(programMapping.allocatedSeats) > 0 &&
-          programCapacityUsed + totalSeats > Number(programMapping.allocatedSeats)
+          reservedProgramSeats + totalSeats > Number(programMapping.allocatedSeats)
         ) {
           throw new ApiError(HTTP_STATUS.CONFLICT, 'Not enough program seats are available.');
         }

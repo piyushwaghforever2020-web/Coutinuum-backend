@@ -26,6 +26,7 @@ const envSchema = Joi.object({
   STRIPE_WEBHOOK_SECRET: Joi.string().allow('').default(''),
   STRIPE_CURRENCY: Joi.string().trim().lowercase().default('usd'),
   STRIPE_INVOICE_DUE_DAYS: Joi.number().integer().min(1).max(90).default(14),
+  SELF_PAY_SEAT_HOLD_MINUTES: Joi.number().integer().min(1).max(30).default(10),
   PAYMENT_SUCCESS_URL: Joi.string().uri().default('http://localhost:3000/payment/success'),
   PAYMENT_CANCEL_URL: Joi.string().uri().default('http://localhost:3000/payment/cancel'),
   MAILCHIMP_TRANSACTIONAL_API_KEY: Joi.string().allow('').default(''),
@@ -79,7 +80,8 @@ module.exports = Object.freeze({
     currency: value.STRIPE_CURRENCY,
     successUrl: value.PAYMENT_SUCCESS_URL,
     cancelUrl: value.PAYMENT_CANCEL_URL,
-    invoiceDueDays: value.STRIPE_INVOICE_DUE_DAYS
+    invoiceDueDays: value.STRIPE_INVOICE_DUE_DAYS,
+    selfPaySeatHoldMinutes: value.SELF_PAY_SEAT_HOLD_MINUTES
   },
   mailchimp: {
     transactionalApiKey: value.MAILCHIMP_TRANSACTIONAL_API_KEY,

@@ -106,7 +106,7 @@ const ensureCohortExists = async (cohortId, options = {}) => {
   return cohort;
 };
 
-const ensureCohortAvailableForPayment = (cohort) => {
+const ensureCohortOpenForPayment = (cohort) => {
   if (!cohort.isActive) {
     throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'This cohort is inactive.');
   }
@@ -114,6 +114,10 @@ const ensureCohortAvailableForPayment = (cohort) => {
   if (cohort.status === 'closed') {
     throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'This cohort is closed for enrollment.');
   }
+};
+
+const ensureCohortAvailableForPayment = (cohort) => {
+  ensureCohortOpenForPayment(cohort);
 
   if (cohort.seatsFilled >= cohort.seatLimit || cohort.status === 'full') {
     throw new ApiError(HTTP_STATUS.CONFLICT, 'No seats available for this cohort.');
@@ -148,7 +152,70 @@ const isProgramFullForSeatCount = (programMapping, seatsFilled) =>
   Number(programMapping.allocatedSeats) > 0 &&
   Number(seatsFilled) >= Number(programMapping.allocatedSeats);
 
-const ensureProgramSeatAvailableForPayment = async (participant, transaction) => {
+const SELF_PAY_HOLD_STATUSES = ['locked', 'active'];
+
+const getSelfPayHoldExpiresAt = () => {
+  const expiresAt = new Date();
+  expiresAt.setMinutes(expiresAt.getMinutes() + env.stripe.selfPaySeatHoldMinutes);
+  return expiresAt;
+};
+
+const isUnexpiredHold = (seat, now = new Date()) =>
+  seat?.status === 'locked' &&
+  seat.holdExpiresAt &&
+  new Date(seat.holdExpiresAt).getTime() > now.getTime();
+
+const hasEffectiveCohortCapacity = async (cohort, { transaction, now = new Date() }) => {
+  const reservedSeats = await seatRepository.countEffectiveReservedCapacityByCohort(
+    cohort.id,
+    { now },
+    { transaction }
+  );
+
+  return reservedSeats < Number(cohort.seatLimit);
+};
+
+const ensureProgramSeatAvailableForCheckout = async (
+  { cohortId, programId },
+  { transaction, now = new Date() }
+) => {
+  if (!programId) {
+    return null;
+  }
+
+  const programMapping = await cohortRepository.findProgramMapping(cohortId, programId, {
+    transaction,
+    lock: {
+      level: transaction.LOCK.UPDATE,
+      of: sequelize.models.CohortProgram
+    }
+  });
+
+  if (!programMapping) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      'Selected program is not available for this cohort.'
+    );
+  }
+
+  const reservedProgramSeats = await seatRepository.countEffectiveReservedCapacityByCohortAndProgram(
+    cohortId,
+    programId,
+    { now },
+    { transaction }
+  );
+
+  if (
+    Number(programMapping.allocatedSeats) > 0 &&
+    reservedProgramSeats >= Number(programMapping.allocatedSeats)
+  ) {
+    throw new ApiError(HTTP_STATUS.CONFLICT, 'No seats available for this program.');
+  }
+
+  return programMapping;
+};
+
+const ensureProgramSeatAvailableForPaidEnrollment = async (participant, transaction) => {
   if (!participant.programId) {
     return null;
   }
@@ -257,6 +324,66 @@ const findOpenStripeSession = async (payment) => {
   }
 
   return null;
+};
+
+const CHECKOUT_SESSION_LINK_MAX_ATTEMPTS = 3;
+
+const wait = (milliseconds) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+
+const getStripePaymentIntentId = (stripeObject) =>
+  typeof stripeObject?.payment_intent === 'string'
+    ? stripeObject.payment_intent
+    : stripeObject?.payment_intent?.id || null;
+
+const linkCheckoutSessionToPayment = async ({ paymentId, session }) => {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= CHECKOUT_SESSION_LINK_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await sequelize.transaction(async (transaction) => {
+        const payment = await paymentRepository.findById(paymentId, {
+          transaction,
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Payment
+          }
+        });
+
+        if (!payment || payment.status !== 'pending') {
+          return false;
+        }
+
+        await paymentRepository.update(
+          payment,
+          {
+            stripeCheckoutSessionId: session.id,
+            stripePaymentIntentId: getStripePaymentIntentId(session),
+            checkoutUrl: session.url
+          },
+          { transaction }
+        );
+
+        return true;
+      });
+    } catch (error) {
+      lastError = error;
+      console.warn('[Checkout] Stripe session link attempt failed.', {
+        payment_id: paymentId,
+        checkout_session_id: session?.id || null,
+        attempt,
+        error: error.message
+      });
+
+      if (attempt < CHECKOUT_SESSION_LINK_MAX_ATTEMPTS) {
+        await wait(100 * attempt);
+      }
+    }
+  }
+
+  throw lastError;
 };
 
 const ensureUpcomingCohortFileExists = async () => {
@@ -378,6 +505,7 @@ class ApplicationService {
     }
 
     const cohort = participant.cohort || (await ensureCohortExists(payload.cohort_id));
+    // Fast rejection only; the locked transaction below uses effective reserved capacity.
     ensureCohortAvailableForPayment(cohort);
     const cohortPrice = parseStoredPrice(cohort.price);
 
@@ -385,6 +513,10 @@ class ApplicationService {
       throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'Invalid cohort price.');
     }
 
+    const existingSeat = await seatRepository.findSelfPayByParticipantAndCohort(
+      participant.id,
+      payload.cohort_id
+    );
     const latestPayment = participant.payments?.length
       ? [...participant.payments].sort(
           (left, right) => new Date(right.createdAt) - new Date(left.createdAt)
@@ -393,27 +525,19 @@ class ApplicationService {
 
     const reusableSession = await findOpenStripeSession(latestPayment);
 
-    if (reusableSession) {
+    if (reusableSession && isUnexpiredHold(existingSeat)) {
       return {
         participant_id: participant.id,
         cohort_id: cohort.id,
+        seat_id: existingSeat.id,
+        seat_hold_expires_at: existingSeat.holdExpiresAt,
         session_id: reusableSession.id,
         checkout_url: reusableSession.url,
         reused_existing_session: true
       };
     }
 
-    const session = await stripeService.createCheckoutSession({
-      participantId: participant.id,
-      cohortId: cohort.id,
-      customerEmail: email,
-      currency: env.stripe.currency,
-      unitAmount: Math.round(cohortPrice * 100),
-      productName: cohort.name,
-      productDescription: cohort.description,
-      successUrl: payload.success_url || env.stripe.successUrl,
-      cancelUrl: payload.cancel_url || env.stripe.cancelUrl
-    });
+    let reservation;
 
     await sequelize.transaction(async (transaction) => {
       const lockedParticipant = await participantRepository.findById(participant.id, {
@@ -440,18 +564,88 @@ class ApplicationService {
         }
       });
 
-      ensureCohortAvailableForPayment(lockedCohort);
+      ensureCohortOpenForPayment(lockedCohort);
 
-      const paidCohortSeats = await participantRepository.countEnrolledByCohort(
+      const seat = await seatRepository.findSelfPayByParticipantAndCohort(
+        lockedParticipant.id,
         lockedCohort.id,
-        { transaction }
+        {
+          transaction,
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Seat
+          }
+        }
       );
 
-      if (paidCohortSeats >= Number(lockedCohort.seatLimit)) {
-        throw new ApiError(HTTP_STATUS.CONFLICT, 'No seats available for this cohort.');
+      if (seat && seat.status === 'active') {
+        throw new ApiError(HTTP_STATUS.CONFLICT, 'Payment already completed.');
       }
 
-      await ensureProgramSeatAvailableForPayment(lockedParticipant, transaction);
+      if (seat && seat.status === 'assigned') {
+        throw new ApiError(HTTP_STATUS.CONFLICT, 'This seat is already assigned.');
+      }
+
+      const now = new Date();
+      const hasExistingHold = isUnexpiredHold(seat, now);
+
+      if (!hasExistingHold) {
+        const hasCohortCapacity = await hasEffectiveCohortCapacity(lockedCohort, {
+          transaction,
+          now
+        });
+
+        if (!hasCohortCapacity) {
+          throw new ApiError(HTTP_STATUS.CONFLICT, 'No seats available for this cohort.');
+        }
+      }
+
+      if (!hasExistingHold) {
+        await ensureProgramSeatAvailableForCheckout(
+          {
+            cohortId: lockedCohort.id,
+            programId: lockedParticipant.programId
+          },
+          { transaction, now }
+        );
+      }
+
+      const holdExpiresAt = getSelfPayHoldExpiresAt();
+      let heldSeat = seat;
+
+      if (!heldSeat) {
+        heldSeat = await seatRepository.create(
+          {
+            participantId: lockedParticipant.id,
+            sponsorshipId: null,
+            cohortId: lockedCohort.id,
+            programId: lockedParticipant.programId,
+            participantEmail: lockedParticipant.email,
+            status: 'locked',
+            lockedAt: now,
+            holdExpiresAt
+          },
+          { transaction }
+        );
+      } else if (!hasExistingHold) {
+        heldSeat = await seatRepository.update(
+          heldSeat,
+          {
+            programId: lockedParticipant.programId,
+            participantEmail: lockedParticipant.email,
+            status: 'locked',
+            lockedAt: now,
+            activatedAt: null,
+            assignedAt: null,
+            holdExpiresAt
+          },
+          { transaction }
+        );
+      }
+
+      if (!SELF_PAY_HOLD_STATUSES.includes(heldSeat.status)) {
+        throw new ApiError(HTTP_STATUS.CONFLICT, 'No seats available for this cohort.');
+      }
 
       const currentPayment = await paymentRepository.findLatestByParticipantAndCohort(
         lockedParticipant.id,
@@ -471,17 +665,17 @@ class ApplicationService {
         amount: cohortPrice,
         status: 'pending',
         transactionId: null,
-        stripeCheckoutSessionId: session.id,
-        stripePaymentIntentId:
-          typeof session.payment_intent === 'string' ? session.payment_intent : null,
-        checkoutUrl: session.url,
+        stripeCheckoutSessionId: null,
+        stripePaymentIntentId: null,
+        checkoutUrl: null,
         completedAt: null
       };
 
+      let payment;
       if (currentPayment && currentPayment.status !== 'paid') {
-        await paymentRepository.update(currentPayment, paymentPayload, { transaction });
+        payment = await paymentRepository.update(currentPayment, paymentPayload, { transaction });
       } else {
-        await paymentRepository.create(paymentPayload, { transaction });
+        payment = await paymentRepository.create(paymentPayload, { transaction });
       }
 
       await participantRepository.update(
@@ -492,11 +686,114 @@ class ApplicationService {
         },
         { transaction }
       );
+
+      reservation = {
+        paymentId: payment.id,
+        seatId: heldSeat.id,
+        holdExpiresAt: heldSeat.holdExpiresAt || holdExpiresAt
+      };
     });
+
+    let session;
+    try {
+      session = await stripeService.createCheckoutSession({
+        participantId: participant.id,
+        cohortId: cohort.id,
+        customerEmail: email,
+        currency: env.stripe.currency,
+        unitAmount: Math.round(cohortPrice * 100),
+        productName: cohort.name,
+        productDescription: cohort.description,
+        successUrl: payload.success_url || env.stripe.successUrl,
+        cancelUrl: payload.cancel_url || env.stripe.cancelUrl
+      });
+    } catch (error) {
+      await sequelize.transaction(async (transaction) => {
+        const seat = await seatRepository.findById(reservation.seatId, {
+          transaction,
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Seat
+          }
+        });
+
+        if (seat && seat.status === 'locked') {
+          await seatRepository.releaseExpiredHold(seat, { transaction });
+        }
+
+        const payment = await paymentRepository.findById(reservation.paymentId, {
+          transaction,
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Payment
+          }
+        });
+
+        if (payment && payment.status === 'pending') {
+          await paymentRepository.update(payment, { status: 'failed' }, { transaction });
+        }
+      });
+
+      throw error;
+    }
+
+    let linkedSession = false;
+    try {
+      linkedSession = await linkCheckoutSessionToPayment({
+        paymentId: reservation.paymentId,
+        session
+      });
+    } catch (error) {
+      console.error('[Checkout] CRITICAL: Stripe session was created but not linked.', {
+        payment_id: reservation.paymentId,
+        seat_id: reservation.seatId,
+        checkout_session_id: session.id,
+        participant_id: participant.id,
+        cohort_id: cohort.id,
+        error: error.message
+      });
+
+      try {
+        await stripeService.expireCheckoutSession(session.id);
+      } catch (expireError) {
+        console.warn('[Checkout] Stripe checkout session expiration skipped after link failure.', {
+          checkout_session_id: session.id,
+          error: expireError.message
+        });
+      }
+
+      throw error;
+    }
+
+    if (!linkedSession) {
+      console.error('[Checkout] CRITICAL: Stripe session link skipped for non-pending payment.', {
+        payment_id: reservation.paymentId,
+        seat_id: reservation.seatId,
+        checkout_session_id: session.id,
+        participant_id: participant.id,
+        cohort_id: cohort.id
+      });
+
+      try {
+        await stripeService.expireCheckoutSession(session.id);
+      } catch (expireError) {
+        console.warn('[Checkout] Stripe checkout session expiration skipped after skipped link.', {
+          checkout_session_id: session.id,
+          error: expireError.message
+        });
+      }
+
+      throw new ApiError(
+        HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        'Checkout session could not be linked. Please try again.'
+      );
+    }
 
     return {
       participant_id: participant.id,
       cohort_id: cohort.id,
+      seat_id: reservation.seatId,
+      seat_hold_expires_at: reservation.holdExpiresAt,
       session_id: session.id,
       checkout_url: session.url,
       reused_existing_session: false
@@ -525,16 +822,13 @@ class ApplicationService {
     }
 
     const amount = Number(sessionData.amount_total || 0) / 100;
-    const paymentIntentId =
-      typeof sessionData.payment_intent === 'string'
-        ? sessionData.payment_intent
-        : sessionData.payment_intent?.id || null;
+    const paymentIntentId = getStripePaymentIntentId(sessionData);
 
     let confirmationEmailPayload = null;
     const result = await sequelize.transaction(async (transaction) => {
       const participant = await participantRepository.findById(participantId, {
         transaction,
-       lock: {
+        lock: {
           level: transaction.LOCK.UPDATE,
           of: sequelize.models.Participant
         }
@@ -546,7 +840,7 @@ class ApplicationService {
 
       const cohort = await cohortRepository.findById(cohortId, {
         transaction,
-         lock: {
+        lock: {
           level: transaction.LOCK.UPDATE,
           of: sequelize.models.Cohort
         }
@@ -573,6 +867,14 @@ class ApplicationService {
             of: sequelize.models.Payment
           }
         });
+      }
+
+      if (payment?.status === 'refunded' || participant.paymentStatus === 'refunded') {
+        return {
+          processed: false,
+          duplicate: true,
+          refunded: true
+        };
       }
 
       if (payment?.status === 'paid' && participant.paymentStatus === 'paid') {
@@ -640,28 +942,157 @@ class ApplicationService {
         };
       }
 
-      if (!cohort.isActive || cohort.status === 'closed') {
-        throw new ApiError(
-          HTTP_STATUS.CONFLICT,
-          'Payment received but no seats are currently available for this cohort.'
-        );
-      }
-
-      const paidCohortSeats = await participantRepository.countEnrolledByCohort(cohortId, {
-        transaction
+      let seat = await seatRepository.findSelfPayByParticipantAndCohort(participant.id, cohortId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Seat
+        }
       });
 
-      if (paidCohortSeats >= Number(cohort.seatLimit)) {
+      const now = new Date();
+      const hasValidHold =
+        seat &&
+        Number(seat.participantId) === participantId &&
+        Number(seat.cohortId) === cohortId &&
+        isUnexpiredHold(seat, now);
+
+      let programMapping = participant.programId
+        ? await cohortRepository.findProgramMapping(cohortId, participant.programId, {
+            transaction,
+            lock: {
+              level: transaction.LOCK.UPDATE,
+              of: sequelize.models.CohortProgram
+            }
+          })
+        : null;
+
+      if (participant.programId && !programMapping) {
         throw new ApiError(
-          HTTP_STATUS.CONFLICT,
-          'Payment received but no seats are currently available for this cohort.'
+          HTTP_STATUS.BAD_REQUEST,
+          'Selected program is not available for this cohort.'
         );
       }
 
-      const programMapping = await ensureProgramSeatAvailableForPayment(participant, transaction);
+      let canActivateSeat = Boolean(hasValidHold && cohort.isActive && cohort.status !== 'closed');
+
+      if (!canActivateSeat && cohort.isActive && cohort.status !== 'closed') {
+        canActivateSeat = await hasEffectiveCohortCapacity(cohort, { transaction, now });
+
+        if (canActivateSeat && participant.programId && programMapping) {
+          const reservedProgramSeats =
+            await seatRepository.countEffectiveReservedCapacityByCohortAndProgram(
+              cohortId,
+              participant.programId,
+              { now },
+              { transaction }
+            );
+
+          canActivateSeat =
+            Number(programMapping.allocatedSeats) <= 0 ||
+            reservedProgramSeats < Number(programMapping.allocatedSeats);
+        }
+      }
+
+      if (!canActivateSeat) {
+        const refundIdempotencyKey = `capacity-refund:${sessionData.id}`;
+
+        if (payment) {
+          await paymentRepository.update(
+            payment,
+            {
+              amount: amount || Number(payment.amount) || cohortPrice,
+              status: 'refunded',
+              transactionId: paymentIntentId || sessionData.id,
+              stripeCheckoutSessionId: sessionData.id,
+              stripePaymentIntentId: paymentIntentId,
+              checkoutUrl: sessionData.url || payment.checkoutUrl,
+              completedAt: new Date()
+            },
+            { transaction }
+          );
+        } else {
+          payment = await paymentRepository.create(
+            {
+              participantId,
+              cohortId,
+              amount: amount || cohortPrice,
+              status: 'refunded',
+              transactionId: paymentIntentId || sessionData.id,
+              stripeCheckoutSessionId: sessionData.id,
+              stripePaymentIntentId: paymentIntentId,
+              checkoutUrl: sessionData.url || null,
+              completedAt: new Date()
+            },
+            { transaction }
+          );
+        }
+
+        await participantRepository.update(
+          participant,
+          {
+            paymentStatus: 'refunded',
+            registrationStatus: getRegistrationStatusFromPaymentStatus('refunded')
+          },
+          { transaction }
+        );
+
+        if (seat && seat.status === 'locked') {
+          await seatRepository.releaseExpiredHold(seat, { transaction });
+        }
+
+        await syncPaidSeatCounts({
+          cohort,
+          participant,
+          programMapping,
+          transaction
+        });
+
+        return {
+          processed: true,
+          refunded: true,
+          duplicate: false,
+          participant_id: participantId,
+          cohort_id: cohortId,
+          payment_id: payment.id,
+          refund: {
+            payment_intent_id: paymentIntentId,
+            idempotency_key: refundIdempotencyKey
+          }
+        };
+      }
+
       const accessPassword = generateParticipantAccessPassword();
       const passwordHash = await bcrypt.hash(accessPassword, env.bcryptSaltRounds);
       const passwordGeneratedAt = new Date();
+
+      if (!seat) {
+        seat = await seatRepository.create(
+          {
+            participantId,
+            sponsorshipId: null,
+            cohortId,
+            programId: participant.programId,
+            participantEmail: participant.email,
+            status: 'locked',
+            lockedAt: now,
+            holdExpiresAt: null
+          },
+          { transaction }
+        );
+      }
+
+      await seatRepository.update(
+        seat,
+        {
+          programId: participant.programId,
+          participantEmail: participant.email,
+          status: 'active',
+          holdExpiresAt: null,
+          activatedAt: new Date()
+        },
+        { transaction }
+      );
 
       if (payment) {
         await paymentRepository.update(
@@ -743,7 +1174,35 @@ class ApplicationService {
       };
     });
 
-    if (result?.processed) {
+    if (result?.processed && result.refunded) {
+      if (result.refund?.payment_intent_id) {
+        try {
+          await stripeService.refundPaymentIntent(result.refund.payment_intent_id, {
+            idempotencyKey: result.refund.idempotency_key
+          });
+        } catch (error) {
+          console.error('[Stripe Webhook] CRITICAL: capacity refund failed after DB commit.', {
+            checkout_session_id: sessionData.id,
+            participant_id: participantId,
+            cohort_id: cohortId,
+            payment_id: result.payment_id,
+            payment_intent_id: result.refund.payment_intent_id,
+            idempotency_key: result.refund.idempotency_key,
+            error: error.message
+          });
+        }
+      } else {
+        console.error('[Stripe Webhook] CRITICAL: capacity refund needs manual resolution.', {
+          checkout_session_id: sessionData.id,
+          participant_id: participantId,
+          cohort_id: cohortId,
+          payment_id: result.payment_id,
+          reason: 'missing_payment_intent'
+        });
+      }
+    }
+
+    if (result?.processed && !result.refunded) {
       try {
         console.log('[Stripe Webhook] Sending payment confirmation email.', {
           participant_id: participantId,
@@ -856,10 +1315,7 @@ class ApplicationService {
 
     const amount = Number(sessionData.amount_total || 0) / 100;
 
-    const paymentIntentId =
-      typeof sessionData.payment_intent === 'string'
-        ? sessionData.payment_intent
-        : sessionData.payment_intent?.id || null;
+    const paymentIntentId = getStripePaymentIntentId(sessionData);
 
     let failedEmailPayload = null;
     const result = await sequelize.transaction(async (transaction) => {
@@ -906,7 +1362,7 @@ class ApplicationService {
         });
       }
 
-      if (participant.paymentStatus === 'paid') {
+      if (participant.paymentStatus === 'paid' || participant.paymentStatus === 'refunded') {
         console.log('[Stripe Webhook] Ignoring failed event for already paid participant.', {
           checkout_session_id: sessionData.id,
           participant_id: participantId,
@@ -916,7 +1372,7 @@ class ApplicationService {
         return {
           processed: false,
           ignored: true,
-          reason: 'participant_already_paid'
+          reason: `participant_already_${participant.paymentStatus}`
         };
       }
 
@@ -968,6 +1424,18 @@ class ApplicationService {
         { transaction }
       );
 
+      const seat = await seatRepository.findSelfPayByParticipantAndCohort(participant.id, cohortId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Seat
+        }
+      });
+
+      if (seat && seat.status === 'locked') {
+        await seatRepository.releaseExpiredHold(seat, { transaction });
+      }
+
       failedEmailPayload = {
         participantEmail: participant.email,
         participantName: participant.name,
@@ -996,6 +1464,252 @@ class ApplicationService {
     }
 
     return result;
+  }
+
+  async processExpiredCheckoutSession(sessionData) {
+    const participantId = Number(sessionData?.metadata?.participant_id);
+    const cohortId = Number(sessionData?.metadata?.cohort_id);
+
+    console.log('[Stripe Webhook] Processing checkout.session.expired.', {
+      checkout_session_id: sessionData?.id || null,
+      participant_id: participantId || null,
+      cohort_id: cohortId || null,
+      amount_total: sessionData?.amount_total ?? null
+    });
+
+    if (!participantId || !cohortId) {
+      throw new ApiError(
+        HTTP_STATUS.BAD_REQUEST,
+        'Missing participant_id or cohort_id in Stripe session metadata.'
+      );
+    }
+
+    return sequelize.transaction(async (transaction) => {
+      const now = new Date();
+      const participant = await participantRepository.findById(participantId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Participant
+        }
+      });
+
+      if (!participant || Number(participant.cohortId) !== cohortId) {
+        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Participant not found for this cohort.');
+      }
+
+      if (participant.paymentStatus === 'paid' || participant.paymentStatus === 'refunded') {
+        return {
+          processed: false,
+          ignored: true,
+          reason: `participant_already_${participant.paymentStatus}`
+        };
+      }
+
+      const payment = await paymentRepository.findByStripeCheckoutSessionId(sessionData.id, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Payment
+        }
+      });
+
+      if (!payment) {
+        return {
+          processed: false,
+          ignored: true,
+          reason: 'payment_not_found_for_expired_session'
+        };
+      }
+
+      if (Number(payment.participantId) !== participantId || Number(payment.cohortId) !== cohortId) {
+        throw new ApiError(
+          HTTP_STATUS.BAD_REQUEST,
+          'Expired Stripe session does not match payment ownership.'
+        );
+      }
+
+      if (payment.status !== 'pending') {
+        return {
+          processed: false,
+          ignored: true,
+          reason: `payment_already_${payment.status}`,
+          payment_id: payment.id
+        };
+      }
+
+      await paymentRepository.update(
+        payment,
+        {
+          status: 'failed',
+          completedAt: null
+        },
+        { transaction }
+      );
+
+      const hasOtherPendingPayment =
+        await paymentRepository.hasOtherPendingByParticipantAndCohort(
+          participantId,
+          cohortId,
+          payment.id,
+          { transaction }
+        );
+
+      if (hasOtherPendingPayment) {
+        return {
+          processed: true,
+          participant_id: participantId,
+          cohort_id: cohortId,
+          payment_id: payment.id,
+          participant_updated: false,
+          released_seat_id: null,
+          reason: 'newer_pending_payment_exists'
+        };
+      }
+
+      await participantRepository.update(
+        participant,
+        {
+          paymentStatus: 'failed',
+          registrationStatus: getRegistrationStatusFromPaymentStatus('failed')
+        },
+        { transaction }
+      );
+
+      const seat = await seatRepository.findSelfPayByParticipantAndCohort(participant.id, cohortId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Seat
+        }
+      });
+
+      let releasedSeatId = null;
+
+      if (seat && seat.status === 'locked' && !isUnexpiredHold(seat, now)) {
+        await seatRepository.releaseExpiredHold(seat, { transaction });
+        releasedSeatId = seat.id;
+      }
+
+      return {
+        processed: true,
+        participant_id: participantId,
+        cohort_id: cohortId,
+        payment_id: payment.id,
+        released_seat_id: releasedSeatId
+      };
+    });
+  }
+
+  async releaseExpiredSelfPaySeatHolds({ limit = 100 } = {}) {
+    const expiredSeats = await seatRepository.findExpiredSelfPayHolds({ limit });
+    const results = [];
+
+    for (const expiredSeat of expiredSeats) {
+      let checkoutSessionId = null;
+      let released = false;
+
+      await sequelize.transaction(async (transaction) => {
+        const now = new Date();
+        const seat = await seatRepository.findById(expiredSeat.id, {
+          transaction,
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Seat
+          }
+        });
+
+        const holdExpiresAt = seat?.holdExpiresAt ? new Date(seat.holdExpiresAt) : null;
+        if (
+          !seat ||
+          seat.status !== 'locked' ||
+          seat.sponsorshipId !== null ||
+          !holdExpiresAt ||
+          holdExpiresAt.getTime() > now.getTime()
+        ) {
+          return;
+        }
+
+        const participant = await participantRepository.findById(seat.participantId, {
+          transaction,
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Participant
+          }
+        });
+
+        if (
+          !participant ||
+          participant.paymentStatus === 'paid' ||
+          participant.paymentStatus === 'refunded'
+        ) {
+          return;
+        }
+
+        const payment = await paymentRepository.findLatestPendingByParticipantAndCohort(
+          seat.participantId,
+          seat.cohortId,
+          {
+            transaction,
+            lock: {
+              level: transaction.LOCK.UPDATE,
+              of: sequelize.models.Payment
+            }
+          }
+        );
+
+        if (payment) {
+          checkoutSessionId = payment.stripeCheckoutSessionId;
+          await paymentRepository.update(payment, { status: 'failed' }, { transaction });
+        }
+
+        const hasOtherPendingPayment = payment
+          ? await paymentRepository.hasOtherPendingByParticipantAndCohort(
+              seat.participantId,
+              seat.cohortId,
+              payment.id,
+              { transaction }
+            )
+          : false;
+
+        if (!hasOtherPendingPayment) {
+          await participantRepository.update(
+            participant,
+            {
+              paymentStatus: 'failed',
+              registrationStatus: getRegistrationStatusFromPaymentStatus('failed')
+            },
+            { transaction }
+          );
+        }
+
+        await seatRepository.releaseExpiredHold(seat, { transaction });
+        released = true;
+      });
+
+      if (checkoutSessionId) {
+        try {
+          await stripeService.expireCheckoutSession(checkoutSessionId);
+        } catch (error) {
+          console.warn('[Seat Hold] Stripe checkout session expiration skipped.', {
+            checkout_session_id: checkoutSessionId,
+            error: error.message
+          });
+        }
+      }
+
+      if (released) {
+        results.push({
+          seat_id: expiredSeat.id,
+          checkout_session_id: checkoutSessionId
+        });
+      }
+    }
+
+    return {
+      processed: results.length,
+      released: results
+    };
   }
 
   async syncRequestedStripeInvoice(stripeInvoice, stripeEventId, { markSent = false } = {}) {
@@ -1220,7 +1934,7 @@ class ApplicationService {
         );
       }
 
-      const programMapping = await ensureProgramSeatAvailableForPayment(participant, transaction);
+      const programMapping = await ensureProgramSeatAvailableForPaidEnrollment(participant, transaction);
       const cohortPrice = parseStoredPrice(cohort.price);
       const amount = Number(stripeInvoice.amount_paid || 0) / 100;
       const paymentIntentId =

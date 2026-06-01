@@ -17,8 +17,14 @@ const normalizeParticipantPaymentStatusInput = (paymentStatus) => {
   return paymentStatus;
 };
 
-const getRegistrationStatusFromPaymentStatus = (paymentStatus) =>
-  paymentStatus === 'paid' ? 'complete' : 'incomplete';
+const getRegistrationStatusFromPaymentStatus = (paymentStatus) => {
+  if (paymentStatus === 'paid') {
+    return 'complete';
+  }
+
+  // Registration status stays binary; paymentStatus carries refunded/failed detail.
+  return 'incomplete';
+};
 
 module.exports = {
   getParticipantPaymentStatus,

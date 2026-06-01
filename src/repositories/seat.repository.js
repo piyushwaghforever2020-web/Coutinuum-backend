@@ -19,6 +19,17 @@ class SeatRepository {
     });
   }
 
+  async findSelfPayByParticipantAndCohort(participantId, cohortId, options = {}) {
+    return Seat.findOne({
+      where: {
+        participantId,
+        cohortId,
+        sponsorshipId: null
+      },
+      ...options
+    });
+  }
+
   async create(data, options = {}) {
     return Seat.create(data, options);
   }
@@ -116,6 +127,189 @@ class SeatRepository {
       },
       ...options
     });
+  }
+
+  async countReservedByCohortAndProgram(cohortId, programId, options = {}) {
+    return Seat.count({
+      where: {
+        cohortId,
+        programId,
+        status: {
+          [Op.in]: RESERVED_SEAT_STATUSES
+        }
+      },
+      ...options
+    });
+  }
+
+  async countEffectiveReservedByCohort(cohortId, { now = new Date() } = {}, options = {}) {
+    return Seat.count({
+      where: {
+        cohortId,
+        [Op.or]: [
+          {
+            status: {
+              [Op.in]: ['assigned', 'active']
+            }
+          },
+          {
+            status: 'locked',
+            [Op.or]: [
+              {
+                holdExpiresAt: null
+              },
+              {
+                holdExpiresAt: {
+                  [Op.gt]: now
+                }
+              }
+            ]
+          }
+        ]
+      },
+      ...options
+    });
+  }
+
+  async countEffectiveReservedCapacityByCohort(
+    cohortId,
+    { now = new Date() } = {},
+    options = {}
+  ) {
+    const reservedSeats = await this.countEffectiveReservedByCohort(
+      cohortId,
+      { now },
+      options
+    );
+
+    const paidParticipants = await Participant.count({
+      where: {
+        cohortId,
+        paymentStatus: 'paid'
+      },
+      ...options
+    });
+
+    const participantSeatRows = await Seat.count({
+      where: {
+        cohortId,
+        participantId: {
+          [Op.ne]: null
+        },
+        status: {
+          [Op.in]: ['assigned', 'active']
+        }
+      },
+      ...options
+    });
+
+    // Legacy paid participants may not have seat rows yet; locked self-pay holds
+    // must stay unpaid until activation so this adjustment does not double-count.
+    return reservedSeats + Math.max(0, paidParticipants - participantSeatRows);
+  }
+
+  async countEffectiveReservedByCohortAndProgram(
+    cohortId,
+    programId,
+    { now = new Date() } = {},
+    options = {}
+  ) {
+    return Seat.count({
+      where: {
+        cohortId,
+        programId,
+        [Op.or]: [
+          {
+            status: {
+              [Op.in]: ['assigned', 'active']
+            }
+          },
+          {
+            status: 'locked',
+            [Op.or]: [
+              {
+                holdExpiresAt: null
+              },
+              {
+                holdExpiresAt: {
+                  [Op.gt]: now
+                }
+              }
+            ]
+          }
+        ]
+      },
+      ...options
+    });
+  }
+
+  async countEffectiveReservedCapacityByCohortAndProgram(
+    cohortId,
+    programId,
+    { now = new Date() } = {},
+    options = {}
+  ) {
+    const reservedSeats = await this.countEffectiveReservedByCohortAndProgram(
+      cohortId,
+      programId,
+      { now },
+      options
+    );
+
+    const paidParticipants = await Participant.count({
+      where: {
+        cohortId,
+        programId,
+        paymentStatus: 'paid'
+      },
+      ...options
+    });
+
+    const participantSeatRows = await Seat.count({
+      where: {
+        cohortId,
+        programId,
+        participantId: {
+          [Op.ne]: null
+        },
+        status: {
+          [Op.in]: ['assigned', 'active']
+        }
+      },
+      ...options
+    });
+
+    // Legacy paid participants may not have seat rows yet; locked self-pay holds
+    // must stay unpaid until activation so this adjustment does not double-count.
+    return reservedSeats + Math.max(0, paidParticipants - participantSeatRows);
+  }
+
+  async findExpiredSelfPayHolds({ now = new Date(), limit = 100 } = {}, options = {}) {
+    return Seat.findAll({
+      where: {
+        sponsorshipId: null,
+        participantId: {
+          [Op.ne]: null
+        },
+        status: 'locked',
+        holdExpiresAt: {
+          [Op.lte]: now
+        }
+      },
+      order: [['holdExpiresAt', 'ASC']],
+      limit,
+      ...options
+    });
+  }
+
+  async releaseExpiredHold(seat, options = {}) {
+    return seat.update(
+      {
+        status: 'released',
+        holdExpiresAt: null
+      },
+      options
+    );
   }
 
   async countReservedByCohortExcludingUnpaidSponsorship(cohortId, options = {}) {
