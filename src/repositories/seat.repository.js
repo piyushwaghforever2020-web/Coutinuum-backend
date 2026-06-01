@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Seat, Sponsorship } = require('../models');
+const { Seat, Sponsorship, Participant } = require('../models');
 
 const RESERVED_SEAT_STATUSES = ['locked', 'assigned', 'active'];
 const USED_SEAT_STATUSES = ['assigned', 'active'];
@@ -37,6 +37,71 @@ class SeatRepository {
         sponsorshipId,
         id
       },
+      ...options
+    });
+  }
+
+  async findAllBySponsorship(sponsorshipId, options = {}) {
+    return Seat.findAll({
+      where: {
+        sponsorshipId
+      },
+      include: [
+        {
+          model: Participant,
+          as: 'participant',
+          required: false
+        }
+      ],
+      order: [['id', 'ASC']],
+      ...options
+    });
+  }
+
+  async findAllByEmployerAndCohort(employerUserId, cohortId, options = {}) {
+    return Seat.findAll({
+      where: {
+        cohortId
+      },
+      include: [
+        {
+          model: Sponsorship,
+          as: 'sponsorship',
+          attributes: ['id', 'status', 'employerUserId', 'cohortId'],
+          where: {
+            employerUserId,
+            cohortId
+          },
+          required: true
+        },
+        {
+          model: Participant,
+          as: 'participant',
+          required: false
+        }
+      ],
+      order: [['id', 'ASC']],
+      ...options
+    });
+  }
+
+  async findByEmployerCohortAndId(employerUserId, cohortId, id, options = {}) {
+    return Seat.findOne({
+      where: {
+        id,
+        cohortId
+      },
+      include: [
+        {
+          model: Sponsorship,
+          as: 'sponsorship',
+          where: {
+            employerUserId,
+            cohortId
+          },
+          required: true
+        }
+      ],
       ...options
     });
   }

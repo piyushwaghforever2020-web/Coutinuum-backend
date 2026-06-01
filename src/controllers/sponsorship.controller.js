@@ -12,6 +12,11 @@ const getEmployerDashboard = asyncHandler(async (req, res) => {
   return sendSuccess(res, 'Sponsorship dashboard fetched successfully.', data);
 });
 
+const getEmployerSeats = asyncHandler(async (req, res) => {
+  const data = await sponsorshipService.getEmployerSeats(req.params.id, req.user);
+  return sendSuccess(res, 'Sponsorship seats fetched successfully.', data);
+});
+
 const assignSeat = asyncHandler(async (req, res) => {
   const data = await sponsorshipService.assignSeat(
     req.params.id,
@@ -34,6 +39,7 @@ const resendParticipantLogin = asyncHandler(async (req, res) => {
 module.exports = {
   createBlockSponsorship,
   getEmployerDashboard,
+  getEmployerSeats,
   assignSeat,
   resendParticipantLogin
 };

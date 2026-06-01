@@ -35,6 +35,10 @@ const getEmployerDashboard = {
   params: sponsorshipIdParam
 };
 
+const getEmployerSeats = {
+  params: sponsorshipIdParam
+};
+
 const assignSeat = {
   params: seatParam,
   body: Joi.object({
@@ -54,6 +58,7 @@ const resendParticipantLogin = {
 module.exports = {
   createBlockSponsorship,
   getEmployerDashboard,
+  getEmployerSeats,
   assignSeat,
   resendParticipantLogin
 };

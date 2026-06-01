@@ -77,6 +77,7 @@ const buildParticipantLoginUrl = (participant) =>
 
 const mapSeat = (seat) => ({
   id: Number(seat.id),
+  sponsorship_id: seat.sponsorshipId ? Number(seat.sponsorshipId) : null,
   status: seat.status,
   participant_id: seat.participantId ? Number(seat.participantId) : null,
   participant_email: seat.participantEmail || null,
@@ -93,8 +94,21 @@ const mapSeat = (seat) => ({
     : null
 });
 
-const mapDashboard = (sponsorship) => {
-  const seats = (sponsorship.seats || []).map(mapSeat);
+const mapDashboard = (sponsorship, aggregate = {}) => {
+  const sponsorships = aggregate.sponsorships || [sponsorship];
+  const seats = (aggregate.seats || sponsorship.seats || []).map(mapSeat);
+  const totalSeats = sponsorships.reduce(
+    (total, item) => total + Number(item.totalSeats || 0),
+    0
+  );
+  const usedSeats = sponsorships.reduce(
+    (total, item) => total + Number(item.usedSeats || 0),
+    0
+  );
+  const amount = sponsorships.reduce(
+    (total, item) => total + Number(item.amount || 0),
+    0
+  );
   const seatCounts = seats.reduce(
     (counts, seat) => {
       counts[seat.status] = (counts[seat.status] || 0) + 1;
@@ -107,13 +121,13 @@ const mapDashboard = (sponsorship) => {
     sponsorship: {
       id: Number(sponsorship.id),
       status: sponsorship.status,
-      total_seats: Number(sponsorship.totalSeats),
-      used_seats: Number(sponsorship.usedSeats || 0),
+      total_seats: totalSeats,
+      used_seats: usedSeats,
       available_seats: seatCounts.available || 0,
       locked_seats: seatCounts.locked || 0,
       assigned_seats: seatCounts.assigned || 0,
       active_seats: seatCounts.active || 0,
-      amount: Number(sponsorship.amount || 0),
+      amount,
       currency: sponsorship.currency,
       paid_at: sponsorship.paidAt,
       invoice_due_at: sponsorship.invoiceDueAt,
@@ -149,8 +163,7 @@ const mapDashboard = (sponsorship) => {
       amount: Number(sponsorship.amount || 0),
       currency: sponsorship.currency,
       due_at: sponsorship.invoiceDueAt
-    },
-    seats
+    }
   };
 };
 
@@ -215,6 +228,7 @@ const syncPaidSeatCounts = async ({ cohort, participant, transaction }) => {
 };
 
 class SponsorshipService {
+ 
   async createBlockSponsorship(payload) {
     const employerEmail = normalizeEmail(payload.employer_email);
     const programId = getProgramId(payload);
@@ -226,7 +240,7 @@ class SponsorshipService {
       throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Cohort not found.');
     }
 
-    if (cohort.status === 'closed' || cohort.status === 'full' || !cohort.isActive) {
+   if (cohort.syncStatus === 'closed' || cohort.syncStatus === 'full' || cohort.syncStatus === 'draft' || cohort.syncStatus === 'inactive') {
       throw new ApiError(
         HTTP_STATUS.CONFLICT,
         'This cohort is not accepting sponsorship bookings.'
@@ -601,7 +615,50 @@ class SponsorshipService {
     }
 
     ensureEmployerAccess(sponsorship, user);
-    return mapDashboard(sponsorship);
+
+    const [sponsorships, seats] = await Promise.all([
+      sponsorshipRepository.findAllByEmployerAndCohort(
+        sponsorship.employerUserId,
+        sponsorship.cohortId
+      ),
+      seatRepository.findAllByEmployerAndCohort(sponsorship.employerUserId, sponsorship.cohortId)
+    ]);
+
+    return mapDashboard(sponsorship, { sponsorships, seats });
+  }
+
+  async getEmployerSeats(sponsorshipId, user) {
+    const sponsorship = await sponsorshipRepository.findPlainById(sponsorshipId);
+
+    if (!sponsorship) {
+      throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Sponsorship not found.');
+    }
+
+    ensureEmployerAccess(sponsorship, user);
+
+    const [sponsorships, seats] = await Promise.all([
+      sponsorshipRepository.findAllByEmployerAndCohort(
+        sponsorship.employerUserId,
+        sponsorship.cohortId
+      ),
+      seatRepository.findAllByEmployerAndCohort(sponsorship.employerUserId, sponsorship.cohortId)
+    ]);
+    const totalSeats = sponsorships.reduce(
+      (total, item) => total + Number(item.totalSeats || 0),
+      0
+    );
+    const usedSeats = sponsorships.reduce(
+      (total, item) => total + Number(item.usedSeats || 0),
+      0
+    );
+
+    return {
+      sponsorship_id: Number(sponsorship.id),
+      total_seats: totalSeats,
+      used_seats: usedSeats,
+      read_only: sponsorship.status !== 'paid',
+      seats: seats.map(mapSeat)
+    };
   }
 
   async assignSeat(sponsorshipId, seatId, payload, user) {
@@ -610,7 +667,7 @@ class SponsorshipService {
     let response = null;
 
     await sequelize.transaction(async (transaction) => {
-      const sponsorship = await sponsorshipRepository.findPlainById(sponsorshipId, {
+      const anchorSponsorship = await sponsorshipRepository.findPlainById(sponsorshipId, {
         transaction,
         lock: {
           level: transaction.LOCK.UPDATE,
@@ -618,29 +675,50 @@ class SponsorshipService {
         }
       });
 
-      if (!sponsorship) {
+      if (!anchorSponsorship) {
         throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Sponsorship not found.');
       }
 
-      ensureEmployerAccess(sponsorship, user);
+      ensureEmployerAccess(anchorSponsorship, user);
+
+      const seat = await seatRepository.findByEmployerCohortAndId(
+        anchorSponsorship.employerUserId,
+        anchorSponsorship.cohortId,
+        seatId,
+        {
+          transaction,
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Seat
+          }
+        }
+      );
+
+      if (!seat) {
+        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Seat not found for this sponsorship.');
+      }
+
+      const sponsorship = await sponsorshipRepository.findPlainById(seat.sponsorshipId, {
+        transaction,
+        lock: {
+          level: transaction.LOCK.UPDATE,
+          of: sequelize.models.Sponsorship
+        }
+      });
+
+      if (
+        !sponsorship ||
+        Number(sponsorship.employerUserId) !== Number(anchorSponsorship.employerUserId) ||
+        Number(sponsorship.cohortId) !== Number(anchorSponsorship.cohortId)
+      ) {
+        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Seat not found for this sponsorship.');
+      }
 
       if (sponsorship.status !== 'paid') {
         throw new ApiError(
           HTTP_STATUS.CONFLICT,
           'Sponsorship invoice must be paid before assigning seats.'
         );
-      }
-
-      const seat = await seatRepository.findBySponsorshipAndId(sponsorship.id, seatId, {
-        transaction,
-        lock: {
-          level: transaction.LOCK.UPDATE,
-          of: sequelize.models.Seat
-        }
-      });
-
-      if (!seat) {
-        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Seat not found for this sponsorship.');
       }
 
       if (seat.status !== 'available') {
@@ -771,6 +849,20 @@ class SponsorshipService {
         { transaction }
       );
 
+      const groupSponsorships = await sponsorshipRepository.findAllByEmployerAndCohort(
+        sponsorship.employerUserId,
+        sponsorship.cohortId,
+        { transaction }
+      );
+      const groupTotalSeats = groupSponsorships.reduce(
+        (total, item) => total + Number(item.totalSeats || 0),
+        0
+      );
+      const groupUsedSeats = groupSponsorships.reduce(
+        (total, item) => total + Number(item.usedSeats || 0),
+        0
+      );
+
       await syncPaidSeatCounts({ cohort, participant, transaction });
 
       // Generate set-password magic link for participant
@@ -798,8 +890,8 @@ class SponsorshipService {
         seat_status: 'assigned',
         participant_id: Number(participant.id),
         participant_email: participantEmail,
-        used_seats: usedSeats,
-        total_seats: Number(sponsorship.totalSeats)
+        used_seats: groupUsedSeats,
+        total_seats: groupTotalSeats
       };
     });
 
@@ -833,13 +925,18 @@ class SponsorshipService {
 
       ensureEmployerAccess(sponsorship, user);
 
-      const seat = await seatRepository.findBySponsorshipAndId(sponsorship.id, seatId, {
-        transaction,
-        lock: {
-          level: transaction.LOCK.UPDATE,
-          of: sequelize.models.Seat
+      const seat = await seatRepository.findByEmployerCohortAndId(
+        sponsorship.employerUserId,
+        sponsorship.cohortId,
+        seatId,
+        {
+          transaction,
+          lock: {
+            level: transaction.LOCK.UPDATE,
+            of: sequelize.models.Seat
+          }
         }
-      });
+      );
 
       if (!seat || !seat.participantId || !['assigned', 'active'].includes(seat.status)) {
         throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Assigned participant seat not found.');
@@ -884,7 +981,7 @@ class SponsorshipService {
       };
 
       response = {
-        sponsorship_id: Number(sponsorship.id),
+        sponsorship_id: Number(seat.sponsorshipId),
         seat_id: Number(seat.id),
         participant_id: Number(participant.id),
         participant_email: participant.email

@@ -99,6 +99,17 @@ class SponsorshipRepository {
     });
   }
 
+  async findAllByEmployerAndCohort(employerUserId, cohortId, options = {}) {
+    return Sponsorship.findAll({
+      where: {
+        employerUserId,
+        cohortId
+      },
+      order: [['createdAt', 'ASC']],
+      ...options
+    });
+  }
+
   async findAllAdmin({ filters = {}, limit, offset }) {
     const where = {};
 

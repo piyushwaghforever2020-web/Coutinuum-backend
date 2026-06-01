@@ -19,6 +19,13 @@ router.get(
   sponsorshipController.getEmployerDashboard
 );
 
+router.get(
+  '/employer/sponsorships/:id/seats',
+  authenticateUser,
+  validate(sponsorshipValidation.getEmployerSeats),
+  sponsorshipController.getEmployerSeats
+);
+
 router.post(
   '/employer/sponsorships/:id/seats/:seat_id/assign',
   authenticateUser,
