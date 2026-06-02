@@ -69,11 +69,25 @@ class SeatRepository {
     });
   }
 
-  async findAllByEmployerAndCohort(employerUserId, cohortId, options = {}) {
+  async findAllByEmployerAndCohort(employerUserId, cohortId, { status, search } = {}, options = {}) {
+    const where = { cohortId };
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (search) {
+      const term = `%${search.trim()}%`;
+      where[Op.or] = [
+        { assignedEmail: { [Op.iLike]: term } },
+        { participantEmail: { [Op.iLike]: term } },
+        { '$participant.name$': { [Op.iLike]: term } },
+        { '$participant.email$': { [Op.iLike]: term } }
+      ];
+    }
+
     return Seat.findAll({
-      where: {
-        cohortId
-      },
+      where,
       include: [
         {
           model: Sponsorship,
@@ -92,6 +106,7 @@ class SeatRepository {
         }
       ],
       order: [['id', 'ASC']],
+      subQuery: false,
       ...options
     });
   }

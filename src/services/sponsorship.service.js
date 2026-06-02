@@ -93,10 +93,104 @@ const mapSeat = (seat) => ({
     : null
 });
 
+/**
+ * Build a cumulative monthly trend for assigned and active seats.
+ * Returns the last 6 months of data with labels like "Jan", "Feb", etc.
+ * Each month shows the cumulative total of seats assigned/activated up to that month.
+ */
+const buildSeatActivationTrend = (seats) => {
+  const MONTH_COUNT = 6;
+  const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const now = new Date();
+  const labels = [];
+  const monthKeys = [];
+
+  for (let i = MONTH_COUNT - 1; i >= 0; i--) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    labels.push(SHORT_MONTHS[date.getMonth()]);
+    monthKeys.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+  }
+
+  // Count seats assigned / activated in each month bucket
+  const assignedPerMonth = {};
+  const activatedPerMonth = {};
+  monthKeys.forEach((key) => {
+    assignedPerMonth[key] = 0;
+    activatedPerMonth[key] = 0;
+  });
+
+  const firstMonthStart = new Date(now.getFullYear(), now.getMonth() - (MONTH_COUNT - 1), 1);
+
+  for (const seat of seats) {
+    if (seat.assignedAt || seat.assigned_at) {
+      const d = new Date(seat.assignedAt || seat.assigned_at);
+      if (d >= firstMonthStart) {
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (assignedPerMonth[key] !== undefined) {
+          assignedPerMonth[key] += 1;
+        }
+      }
+    }
+
+    if (seat.activatedAt || seat.activated_at) {
+      const d = new Date(seat.activatedAt || seat.activated_at);
+      if (d >= firstMonthStart) {
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (activatedPerMonth[key] !== undefined) {
+          activatedPerMonth[key] += 1;
+        }
+      }
+    }
+  }
+
+  // Pre-window baseline: count seats assigned/activated before the 6-month window
+  let assignedBaseline = 0;
+  let activatedBaseline = 0;
+
+  for (const seat of seats) {
+    if (seat.assignedAt || seat.assigned_at) {
+      const d = new Date(seat.assignedAt || seat.assigned_at);
+      if (d < firstMonthStart) {
+        assignedBaseline += 1;
+      }
+    }
+    if (seat.activatedAt || seat.activated_at) {
+      const d = new Date(seat.activatedAt || seat.activated_at);
+      if (d < firstMonthStart) {
+        activatedBaseline += 1;
+      }
+    }
+  }
+
+  // Build cumulative series
+  const assignedSeries = [];
+  const activeSeries = [];
+  let cumulativeAssigned = assignedBaseline;
+  let cumulativeActive = activatedBaseline;
+
+  for (const key of monthKeys) {
+    cumulativeAssigned += assignedPerMonth[key];
+    cumulativeActive += activatedPerMonth[key];
+    assignedSeries.push(cumulativeAssigned);
+    activeSeries.push(cumulativeActive);
+  }
+
+  return {
+    labels,
+    assigned_seats: assignedSeries,
+    active_seats: activeSeries,
+    points: labels.map((label, index) => ({
+      label,
+      assigned_seats: assignedSeries[index],
+      active_seats: activeSeries[index]
+    }))
+  };
+};
+
 const mapDashboard = (sponsorship, aggregate = {}) => {
-  const globalTotals = aggregate.globalTotals || {};
-  
-  //--------count for each sponserships
+  //--------count for each sponsorship
   const sponsorships = aggregate.sponsorships || [sponsorship];
   const seats = (aggregate.seats || sponsorship.seats || []).map(mapSeat);
   const totalSeats = sponsorships.reduce(
@@ -120,11 +214,6 @@ const mapDashboard = (sponsorship, aggregate = {}) => {
   );
 
   return {
-    total_all_seats: globalTotals.totalAllSeats || 0,
-    total_active_seats: globalTotals.totalActiveSeats || 0,
-    total_assigned_seats: globalTotals.totalAssignedSeats || 0,
-    total_used_seats: globalTotals.totalUsedSeats || 0,
-    total_available_seats: globalTotals.totalAvailableSeats || 0,
     sponsorship: {
       id: Number(sponsorship.id),
       status: sponsorship.status,
@@ -155,7 +244,7 @@ const mapDashboard = (sponsorship, aggregate = {}) => {
           }
         : null
     },
-    cohorts: sponsorship.cohort
+    cohort: sponsorship.cohort
       ? {
           id: Number(sponsorship.cohort.id),
           name: sponsorship.cohort.name
@@ -600,26 +689,28 @@ class SponsorshipService {
     const totalUsedSeats = allSeats.filter(seat => ['assigned', 'active'].includes(seat.status)).length;
     const totalAvailableSeats = allSeats.filter(seat => seat.status === 'available').length;
 
-    const globalTotals = {
-      totalAllSeats,
-      totalActiveSeats,
-      totalAssignedSeats,
-      totalUsedSeats,
-      totalAvailableSeats
-    };
-
-    const dashboards = allData.map(d => {
+    const sponsorshipItems = allData.map(d => {
       return mapDashboard(d.sponsorship, { 
         sponsorships: [d.sponsorship], 
-        seats: d.seats,
-        globalTotals
+        seats: d.seats
       });
     });
 
-    return dashboards;
+    // Build seat activation trend chart from all seats across sponsorships
+    const seatActivationTrend = buildSeatActivationTrend(allSeats);
+
+    return {
+      total_all_seats: totalAllSeats,
+      total_active_seats: totalActiveSeats,
+      total_assigned_seats: totalAssignedSeats,
+      total_used_seats: totalUsedSeats,
+      total_available_seats: totalAvailableSeats,
+      sponsorships: sponsorshipItems,
+      seat_activation_trend: seatActivationTrend
+    };
   }
 
-  async getEmployerSeats(employerUserId, user) {
+  async getEmployerSeats(employerUserId, user, query) {
     const sponsorships = await sponsorshipRepository.findAllByEmployerUserId(employerUserId);
 
       if (!sponsorships || sponsorships.length === 0) {
@@ -630,11 +721,13 @@ class SponsorshipService {
 
     const cohortIds = [...new Set(sponsorships.map(s => s.cohortId))];
 
+    const { status, search } = query || {};
+
     const results = await Promise.all(
       cohortIds.map(async (cohortId) => {
         const [groupSponsorships, seats] = await Promise.all([
           sponsorshipRepository.findAllByEmployerAndCohort(employerUserId, cohortId),
-          seatRepository.findAllByEmployerAndCohort(employerUserId, cohortId)
+          seatRepository.findAllByEmployerAndCohort(employerUserId, cohortId, { status, search })
         ]);
         
         const totalSeats = groupSponsorships.reduce((sum, item) => sum + Number(item.totalSeats || 0), 0);

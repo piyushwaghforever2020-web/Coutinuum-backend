@@ -1,3 +1,4 @@
+const { query } = require('express');
 const Joi = require('joi');
 
 const answersSchema = Joi.alternatives().try(
@@ -36,7 +37,11 @@ const getEmployerDashboard = {
 };
 
 const getEmployerSeats = {
-  params: employerUserIdParam
+  params: employerUserIdParam,
+  query : {
+    status: Joi.string().valid('assigned', 'active','used','available').optional(),
+    search: Joi.string().trim().allow('', null).optional()  
+  }
 };
 
 const assignSeat = {

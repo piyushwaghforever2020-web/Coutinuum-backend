@@ -13,7 +13,7 @@ const getEmployerDashboard = asyncHandler(async (req, res) => {
 });
 
 const getEmployerSeats = asyncHandler(async (req, res) => {
-  const data = await sponsorshipService.getEmployerSeats(req.params.employerUserId, req.user);
+  const data = await sponsorshipService.getEmployerSeats(req.params.employerUserId, req.user,req.query);
   return sendSuccess(res, 'Sponsorship seats fetched successfully.', data);
 });
 
