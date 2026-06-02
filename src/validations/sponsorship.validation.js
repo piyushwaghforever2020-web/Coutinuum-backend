@@ -9,12 +9,12 @@ const answersSchema = Joi.alternatives().try(
   Joi.valid(null)
 );
 
-const sponsorshipIdParam = Joi.object({
-  id: Joi.number().integer().positive().required()
+const employerUserIdParam = Joi.object({
+  employerUserId: Joi.number().integer().positive().required()
 });
 
 const seatParam = Joi.object({
-  id: Joi.number().integer().positive().required(),
+  employerUserId: Joi.number().integer().positive().required(),
   seat_id: Joi.number().integer().positive().required()
 });
 
@@ -32,11 +32,11 @@ const createBlockSponsorship = {
 };
 
 const getEmployerDashboard = {
-  params: sponsorshipIdParam
+  params: employerUserIdParam
 };
 
 const getEmployerSeats = {
-  params: sponsorshipIdParam
+  params: employerUserIdParam
 };
 
 const assignSeat = {

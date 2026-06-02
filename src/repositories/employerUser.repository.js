@@ -1,4 +1,4 @@
-const { EmployerUser } = require('../models');
+const { EmployerUser, Sponsorship, Cohort } = require('../models');
 
 class EmployerUserRepository {
   async findById(id, options = {}) {
@@ -16,6 +16,18 @@ class EmployerUserRepository {
 
   async create(data, options = {}) {
     return EmployerUser.create(data, options);
+  }
+
+  async findAllCohortsByEmployerUserId(employerUserId, options = {}) {
+    return EmployerUser.findByPk(employerUserId, {
+      include: [
+        {
+          model: Sponsorship,
+          as: 'sponsorships',
+        }
+      ],
+      ...options
+    });
   }
 
   async update(instance, data, options = {}) {

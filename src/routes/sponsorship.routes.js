@@ -13,31 +13,38 @@ router.post(
 );
 
 router.get(
-  '/employer/sponsorships/:id',
+  '/employer/sponsorships/:employerUserId',
   authenticateUser,
   validate(sponsorshipValidation.getEmployerDashboard),
   sponsorshipController.getEmployerDashboard
 );
 
 router.get(
-  '/employer/sponsorships/:id/seats',
+  '/employer/sponsorships/:employerUserId/seats',
   authenticateUser,
   validate(sponsorshipValidation.getEmployerSeats),
   sponsorshipController.getEmployerSeats
 );
 
 router.post(
-  '/employer/sponsorships/:id/seats/:seat_id/assign',
+  '/employer/sponsorships/:employerUserId/seats/:seat_id/assign',
   authenticateUser,
   validate(sponsorshipValidation.assignSeat),
   sponsorshipController.assignSeat
 );
 
 router.post(
-  '/employer/sponsorships/:id/seats/:seat_id/resend-login',
+  '/employer/sponsorships/:employerUserId/seats/:seat_id/resend-login',
   authenticateUser,
   validate(sponsorshipValidation.resendParticipantLogin),
   sponsorshipController.resendParticipantLogin
+);
+
+router.get(
+  '/employer/:employerUserId/cohorts',
+  authenticateUser,
+  validate(sponsorshipValidation.getAllCohortsForEmployerUser),
+  sponsorshipController.getAllCohortsForEmployerUser
 );
 
 module.exports = router;

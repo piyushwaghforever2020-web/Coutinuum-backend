@@ -79,6 +79,14 @@ Cohort.belongsToMany(Program, {
   as: 'programs'
 });
 
+//Define to get all cohorts for an employer user
+EmployerUser.belongsToMany(Cohort, {
+  through: Sponsorship,
+  foreignKey: 'employerUserId',
+  otherKey: 'cohortId',
+  as: 'cohorts'
+});
+
 Program.belongsToMany(Cohort, {
   through: CohortProgram,
   foreignKey: 'programId',

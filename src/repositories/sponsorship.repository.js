@@ -61,6 +61,16 @@ class SponsorshipRepository {
     });
   }
 
+  //find all sponsership for employeer_user_id
+  async findAllByEmployerUserId(employerUserId, options = {}) {
+    return Sponsorship.findAll({
+      where: {
+        employerUserId
+      },
+      ...options
+    });
+  }
+
   async findByStripeInvoiceId(stripeInvoiceId, options = {}) {
     return Sponsorship.findOne({
       where: {

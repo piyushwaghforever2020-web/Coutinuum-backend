@@ -8,18 +8,18 @@ const createBlockSponsorship = asyncHandler(async (req, res) => {
 });
 
 const getEmployerDashboard = asyncHandler(async (req, res) => {
-  const data = await sponsorshipService.getEmployerDashboard(req.params.id, req.user);
+  const data = await sponsorshipService.getEmployerDashboard(req.params.employerUserId, req.user);
   return sendSuccess(res, 'Sponsorship dashboard fetched successfully.', data);
 });
 
 const getEmployerSeats = asyncHandler(async (req, res) => {
-  const data = await sponsorshipService.getEmployerSeats(req.params.id, req.user);
+  const data = await sponsorshipService.getEmployerSeats(req.params.employerUserId, req.user);
   return sendSuccess(res, 'Sponsorship seats fetched successfully.', data);
 });
 
 const assignSeat = asyncHandler(async (req, res) => {
   const data = await sponsorshipService.assignSeat(
-    req.params.id,
+    req.params.employerUserId,
     req.params.seat_id,
     req.body,
     req.user
@@ -29,11 +29,17 @@ const assignSeat = asyncHandler(async (req, res) => {
 
 const resendParticipantLogin = asyncHandler(async (req, res) => {
   const data = await sponsorshipService.resendParticipantLogin(
-    req.params.id,
+    req.params.employerUserId,
     req.params.seat_id,
     req.user
   );
   return sendSuccess(res, 'Participant login credentials resent successfully.', data);
+});
+
+//get-all cohorts for employer_user_id
+const getAllCohortsForEmployerUser = asyncHandler(async (req, res) => {
+  const data = await sponsorshipService.getAllCohortsForEmployerUser(req.params.employer_user_id, req.user);
+  return sendSuccess(res, 'Cohorts fetched successfully.', data);
 });
 
 module.exports = {
@@ -41,5 +47,6 @@ module.exports = {
   getEmployerDashboard,
   getEmployerSeats,
   assignSeat,
-  resendParticipantLogin
+  resendParticipantLogin,
+  getAllCohortsForEmployerUser
 };

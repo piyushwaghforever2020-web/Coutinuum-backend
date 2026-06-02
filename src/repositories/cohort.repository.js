@@ -78,6 +78,24 @@ class CohortRepository {
     });
   }
 
+    async findAllActiveById(id, options = {}) {
+    return Cohort.findAll({
+      where: {
+        id,
+        isActive: true
+      },
+      ...options,
+      include: [
+        ...(options.include || []),
+        {
+          model: Program,
+          as: 'programs',
+          through: { attributes: ['allocatedSeats', 'seatsFilled', 'isFull'] }
+        }
+      ]
+    });
+  }
+
   async create(data, options = {}) {
     return Cohort.create(data, options);
   }

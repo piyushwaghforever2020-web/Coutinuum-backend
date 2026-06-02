@@ -264,18 +264,8 @@ const sendParticipantLoginCredentialsEmail = async ({
   participantEmail,
   participantName,
   cohortName,
-  temporaryPassword,
-  setPasswordUrl,
   loginUrl
 }) => {
-  const hasSetPassword = Boolean(setPasswordUrl);
-  const primaryUrl = hasSetPassword ? setPasswordUrl : (loginUrl || '#');
-  const primaryLabel = hasSetPassword ? 'Set Your Password' : 'Open Participant Login';
-
-  const followUpHtml = hasSetPassword
-    ? `After setting your password, you can sign in from the participant login page.`
-    : `Use your temporary password and open the participant login page to continue.`;
-
   await sendMail({
     to: [{ email: participantEmail, name: participantName }],
     subject: 'Your Cohort Login Credentials',
@@ -283,15 +273,9 @@ const sendParticipantLoginCredentialsEmail = async ({
       iconType: 'success',
       title: 'Your Access Is Ready',
       greeting: `Hello ${escapeHtml(participantName)},`,
-      messageHtml: `You have been assigned a seat for <strong>${escapeHtml(cohortName || 'your cohort')}</strong>. ${followUpHtml}`,
-      ...(temporaryPassword && {
-        passwordBox: {
-          password: temporaryPassword,
-          hint: 'Keep this temporary password private.'
-        }
-      }),
-      buttonLabel: primaryLabel,
-      buttonUrl: primaryUrl,
+      messageHtml: `You have been assigned a seat for <strong>${escapeHtml(cohortName || 'your cohort')}</strong>. Click the button below to sign in directly without a password.`,
+      buttonLabel: 'Access Your Account',
+      buttonUrl: loginUrl || '#',
       footer: 'If you did not expect this email, please contact support.'
     }),
     attachments: getEmailLogoAttachments()

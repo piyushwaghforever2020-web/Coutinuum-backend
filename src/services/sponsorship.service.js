@@ -132,13 +132,6 @@ const mapDashboard = (sponsorship, aggregate = {}) => {
       invoice_due_at: sponsorship.invoiceDueAt,
       hosted_invoice_url: sponsorship.hostedInvoiceUrl,
       invoice_pdf_url: sponsorship.invoicePdfUrl,
-      cohort: sponsorship.cohort
-        ? {
-            id: Number(sponsorship.cohort.id),
-            name: sponsorship.cohort.name,
-            status: sponsorship.cohort.status
-          }
-        : null,
       program: sponsorship.program
         ? {
             id: Number(sponsorship.program.id),
@@ -568,112 +561,89 @@ class SponsorshipService {
     return result;
   }
 
-  async getEmployerDashboard(sponsorshipId, user) {
-    const sponsorship = await sponsorshipRepository.findById(sponsorshipId);
+  async getEmployerDashboard(employerUserId, user) {
+    const sponsorships = await sponsorshipRepository.findAllByEmployerUserId(employerUserId);
 
-    if (!sponsorship) {
-      throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Sponsorship not found.');
+    if (!sponsorships || sponsorships.length === 0) {
+      throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Sponsorships not found.');
     }
 
-    ensureEmployerAccess(sponsorship, user);
+    sponsorships.forEach(s => ensureEmployerAccess(s, user));
 
-    const [sponsorships, seats] = await Promise.all([
-      sponsorshipRepository.findAllByEmployerAndCohort(
-        sponsorship.employerUserId,
-        sponsorship.cohortId
-      ),
-      seatRepository.findAllByEmployerAndCohort(sponsorship.employerUserId, sponsorship.cohortId)
-    ]);
+    const cohortIds = [...new Set(sponsorships.map(s => s.cohortId))];
 
-    return mapDashboard(sponsorship, { sponsorships, seats });
+    const dashboards = await Promise.all(
+      cohortIds.map(async (cohortId) => {
+        const anchorSponsorship = sponsorships.find(s => s.cohortId === cohortId);
+        const [groupSponsorships, seats] = await Promise.all([
+          sponsorshipRepository.findAllByEmployerAndCohort(employerUserId, cohortId),
+          seatRepository.findAllByEmployerAndCohort(employerUserId, cohortId)
+        ]);
+
+        return mapDashboard(anchorSponsorship, { sponsorships: groupSponsorships, seats });
+      })
+    );
+
+    return dashboards;
   }
 
-  async getEmployerSeats(sponsorshipId, user) {
-    const sponsorship = await sponsorshipRepository.findPlainById(sponsorshipId);
+  async getEmployerSeats(employerUserId, user) {
+    const sponsorships = await sponsorshipRepository.findAllByEmployerUserId(employerUserId);
 
-    if (!sponsorship) {
-      throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Sponsorship not found.');
+    if (!sponsorships || sponsorships.length === 0) {
+      throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Sponsorships not found.');
     }
 
-    ensureEmployerAccess(sponsorship, user);
+    sponsorships.forEach(s => ensureEmployerAccess(s, user));
 
-    const [sponsorships, seats] = await Promise.all([
-      sponsorshipRepository.findAllByEmployerAndCohort(
-        sponsorship.employerUserId,
-        sponsorship.cohortId
-      ),
-      seatRepository.findAllByEmployerAndCohort(sponsorship.employerUserId, sponsorship.cohortId)
-    ]);
-    const totalSeats = sponsorships.reduce(
-      (total, item) => total + Number(item.totalSeats || 0),
-      0
-    );
-    const usedSeats = sponsorships.reduce(
-      (total, item) => total + Number(item.usedSeats || 0),
-      0
+    const cohortIds = [...new Set(sponsorships.map(s => s.cohortId))];
+
+    const results = await Promise.all(
+      cohortIds.map(async (cohortId) => {
+        const [groupSponsorships, seats] = await Promise.all([
+          sponsorshipRepository.findAllByEmployerAndCohort(employerUserId, cohortId),
+          seatRepository.findAllByEmployerAndCohort(employerUserId, cohortId)
+        ]);
+        
+        const totalSeats = groupSponsorships.reduce((sum, item) => sum + Number(item.totalSeats || 0), 0);
+        const usedSeats = groupSponsorships.reduce((sum, item) => sum + Number(item.usedSeats || 0), 0);
+        
+        const isPaid = groupSponsorships.some(s => s.status === 'paid');
+
+        return {
+          cohort_id: cohortId,
+          total_seats: totalSeats,
+          used_seats: usedSeats,
+          read_only: !isPaid,
+          seats: seats.map(mapSeat)
+        };
+      })
     );
 
-    return {
-      sponsorship_id: Number(sponsorship.id),
-      total_seats: totalSeats,
-      used_seats: usedSeats,
-      read_only: sponsorship.status !== 'paid',
-      seats: seats.map(mapSeat)
-    };
+    return results;
   }
 
-  async assignSeat(sponsorshipId, seatId, payload, user) {
+  async assignSeat(employerUserId, seatId, payload, user) {
     const participantEmail = normalizeEmail(payload.participant_email);
     let emailPayload = null;
     let response = null;
 
     await sequelize.transaction(async (transaction) => {
-      const anchorSponsorship = await sponsorshipRepository.findPlainById(sponsorshipId, {
+      const seat = await seatRepository.findById(seatId, {
         transaction,
+        include: [{ model: sequelize.models.Sponsorship, as: 'sponsorship' }],
         lock: {
           level: transaction.LOCK.UPDATE,
-          of: sequelize.models.Sponsorship
+          of: sequelize.models.Seat
         }
       });
 
-      if (!anchorSponsorship) {
-        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Sponsorship not found.');
+      if (!seat || !seat.sponsorship || Number(seat.sponsorship.employerUserId) !== Number(employerUserId)) {
+        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Seat not found for this employer.');
       }
 
-      ensureEmployerAccess(anchorSponsorship, user);
-
-      const seat = await seatRepository.findByEmployerCohortAndId(
-        anchorSponsorship.employerUserId,
-        anchorSponsorship.cohortId,
-        seatId,
-        {
-          transaction,
-          lock: {
-            level: transaction.LOCK.UPDATE,
-            of: sequelize.models.Seat
-          }
-        }
-      );
-
-      if (!seat) {
-        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Seat not found for this sponsorship.');
-      }
-
-      const sponsorship = await sponsorshipRepository.findPlainById(seat.sponsorshipId, {
-        transaction,
-        lock: {
-          level: transaction.LOCK.UPDATE,
-          of: sequelize.models.Sponsorship
-        }
-      });
-
-      if (
-        !sponsorship ||
-        Number(sponsorship.employerUserId) !== Number(anchorSponsorship.employerUserId) ||
-        Number(sponsorship.cohortId) !== Number(anchorSponsorship.cohortId)
-      ) {
-        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Seat not found for this sponsorship.');
-      }
+      const sponsorship = seat.sponsorship;
+      ensureEmployerAccess(sponsorship, user);
 
       if (sponsorship.status !== 'paid') {
         throw new ApiError(
@@ -714,10 +684,6 @@ class SponsorshipService {
         throw new ApiError(HTTP_STATUS.CONFLICT, 'Participant is already enrolled in this cohort.');
       }
 
-      const temporaryPassword = generateTemporaryPassword();
-      const passwordHash = await bcrypt.hash(temporaryPassword, env.bcryptSaltRounds);
-      const passwordGeneratedAt = new Date();
-
       const participantPayload = {
         name: payload.participant_name,
         email: participantEmail,
@@ -735,11 +701,12 @@ class SponsorshipService {
         billingManagerEmail: user.email,
         paymentStatus: 'paid',
         registrationStatus: getRegistrationStatusFromPaymentStatus('paid'),
-        passwordHash,
-        passwordGeneratedAt,
-        mustChangePassword: true,
-        passwordChangedAt: null,
-        isActive: true
+        isActive: true,
+        // No password fields required for magic link flow
+        passwordHash: null,
+        passwordGeneratedAt: null,
+        mustChangePassword: false,
+        passwordChangedAt: null
       };
 
       if (!participant) {
@@ -826,13 +793,13 @@ class SponsorshipService {
 
       await syncPaidSeatCounts({ cohort, participant, transaction });
 
-      // Generate set-password magic link for participant
-      const { magicLinkUrl: setPasswordUrl } = await magicLinkService.generateMagicLink({
+      // Generate login magic link for participant
+      const { magicLinkUrl: loginUrl } = await magicLinkService.generateMagicLink({
         email: participant.email,
         role: 'participant',
         participantId: participant.id,
         cohortId: sponsorship.cohortId,
-        purpose: 'set_password',
+        purpose: 'login',
         transaction
       });
 
@@ -840,9 +807,7 @@ class SponsorshipService {
         participantEmail,
         participantName: participant.name,
         cohortName: cohort.name,
-        temporaryPassword: temporaryPassword,
-        setPasswordUrl,
-        loginUrl: buildParticipantLoginUrl(participant)
+        loginUrl
       };
 
       response = {
@@ -867,41 +832,54 @@ class SponsorshipService {
     return response;
   }
 
-  async resendParticipantLogin(sponsorshipId, seatId, user) {
+  async getAllCohortsForEmployerUser(employerUserId, options = {}) {
+    const employerUser = await employerUserRepository.findAllCohortsByEmployerUserId(
+      employerUserId, options
+    );
+
+    if (!employerUser || !employerUser.sponsorships) {
+      return [];
+    }
+
+    const sponsorships = employerUser.sponsorships;
+    const cohortIds = [...new Set(sponsorships.map(s => s.cohortId))];
+
+    const cohorts = await cohortRepository.findAllActiveById(cohortIds, options);
+
+    return cohorts.map(cohort => {
+      const sponsorship = sponsorships.find(s => s.cohortId === cohort.id);
+      return {
+        ...cohort.toJSON(),
+        sponsorship_id: sponsorship ? Number(sponsorship.id) : null,
+        sponsorship_name: cohort.name
+      };
+    });
+  }
+
+  async resendParticipantLogin(employerUserId, seatId, user) {
     let emailPayload = null;
     let response = null;
 
     await sequelize.transaction(async (transaction) => {
-      const sponsorship = await sponsorshipRepository.findPlainById(sponsorshipId, {
+      const seat = await seatRepository.findById(seatId, {
         transaction,
+        include: [{ model: sequelize.models.Sponsorship, as: 'sponsorship' }],
         lock: {
           level: transaction.LOCK.UPDATE,
-          of: sequelize.models.Sponsorship
+          of: sequelize.models.Seat
         }
       });
-
-      if (!sponsorship) {
-        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Sponsorship not found.');
-      }
-
-      ensureEmployerAccess(sponsorship, user);
-
-      const seat = await seatRepository.findByEmployerCohortAndId(
-        sponsorship.employerUserId,
-        sponsorship.cohortId,
-        seatId,
-        {
-          transaction,
-          lock: {
-            level: transaction.LOCK.UPDATE,
-            of: sequelize.models.Seat
-          }
-        }
-      );
 
       if (!seat || !seat.participantId || !['assigned', 'active'].includes(seat.status)) {
         throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Assigned participant seat not found.');
       }
+
+      const sponsorship = seat.sponsorship;
+      if (!sponsorship || Number(sponsorship.employerUserId) !== Number(employerUserId)) {
+        throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Seat not found for this employer.');
+      }
+
+      ensureEmployerAccess(sponsorship, user);
 
       const participant = await participantRepository.findById(seat.participantId, {
         transaction,
@@ -915,21 +893,16 @@ class SponsorshipService {
         throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Participant not found for this seat.');
       }
 
-      const temporaryPassword = generateTemporaryPassword();
-      const passwordHash = await bcrypt.hash(temporaryPassword, env.bcryptSaltRounds);
-
-      await participantRepository.update(
-        participant,
-        {
-          passwordHash,
-          passwordGeneratedAt: new Date(),
-          mustChangePassword: true,
-          passwordChangedAt: null
-        },
-        { transaction }
-      );
-
       const cohort = await sequelize.models.Cohort.findByPk(sponsorship.cohortId, {
+        transaction
+      });
+
+      const { magicLinkUrl: loginUrl } = await magicLinkService.generateMagicLink({
+        email: participant.email,
+        role: 'participant',
+        participantId: participant.id,
+        cohortId: sponsorship.cohortId,
+        purpose: 'login',
         transaction
       });
 
@@ -937,8 +910,7 @@ class SponsorshipService {
         participantEmail: participant.email,
         participantName: participant.name,
         cohortName: cohort ? cohort.name : 'your cohort',
-        temporaryPassword,
-        loginUrl: buildParticipantLoginUrl(participant)
+        loginUrl
       };
 
       response = {
