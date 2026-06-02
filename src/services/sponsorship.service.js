@@ -590,7 +590,7 @@ class SponsorshipService {
   async getEmployerSeats(employerUserId, user) {
     const sponsorships = await sponsorshipRepository.findAllByEmployerUserId(employerUserId);
 
-    if (!sponsorships || sponsorships.length === 0) {
+      if (!sponsorships || sponsorships.length === 0) {
       throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Sponsorships not found.');
     }
 
@@ -609,18 +609,31 @@ class SponsorshipService {
         const usedSeats = groupSponsorships.reduce((sum, item) => sum + Number(item.usedSeats || 0), 0);
         
         const isPaid = groupSponsorships.some(s => s.status === 'paid');
+        const cohortName = groupSponsorships[0]?.cohort?.name || '';
 
-        return {
+        // Map each seat to include cohort information
+        const seatsWithCohortInfo = seats.map(seat => ({
           cohort_id: cohortId,
+          cohort_name: cohortName,
           total_seats: totalSeats,
           used_seats: usedSeats,
-          read_only: !isPaid,
-          seats: seats.map(mapSeat)
-        };
+          is_paid: isPaid,
+          seat_id: Number(seat.id),
+          sponsorship_id: seat.sponsorshipId ? Number(seat.sponsorshipId) : null,
+          seat_status: seat.status,
+          participant_id: seat.participantId ? Number(seat.participantId) : null,
+          participant_email: seat.participantEmail || null,
+          assigned_email: seat.assignedEmail || null,
+          assigned_at: seat.assignedAt,
+          activated_at: seat.activatedAt,
+          participant_name: seat.participant?.name || null
+        }));
+
+        return seatsWithCohortInfo;
       })
     );
 
-    return results;
+    return results.flat();
   }
 
   async assignSeat(employerUserId, seatId, payload, user) {
