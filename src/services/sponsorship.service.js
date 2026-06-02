@@ -94,6 +94,9 @@ const mapSeat = (seat) => ({
 });
 
 const mapDashboard = (sponsorship, aggregate = {}) => {
+  const globalTotals = aggregate.globalTotals || {};
+  
+  //--------count for each sponserships
   const sponsorships = aggregate.sponsorships || [sponsorship];
   const seats = (aggregate.seats || sponsorship.seats || []).map(mapSeat);
   const totalSeats = sponsorships.reduce(
@@ -117,6 +120,11 @@ const mapDashboard = (sponsorship, aggregate = {}) => {
   );
 
   return {
+    total_all_seats: globalTotals.totalAllSeats || 0,
+    total_active_seats: globalTotals.totalActiveSeats || 0,
+    total_assigned_seats: globalTotals.totalAssignedSeats || 0,
+    total_used_seats: globalTotals.totalUsedSeats || 0,
+    total_available_seats: globalTotals.totalAvailableSeats || 0,
     sponsorship: {
       id: Number(sponsorship.id),
       status: sponsorship.status,
@@ -147,6 +155,12 @@ const mapDashboard = (sponsorship, aggregate = {}) => {
           }
         : null
     },
+    cohorts: sponsorship.cohort
+      ? {
+          id: Number(sponsorship.cohort.id),
+          name: sponsorship.cohort.name
+        }
+      : null,
     read_only: sponsorship.status !== 'paid',
     payment_panel: {
       status: sponsorship.status,
@@ -570,19 +584,37 @@ class SponsorshipService {
 
     sponsorships.forEach(s => ensureEmployerAccess(s, user));
 
-    const cohortIds = [...new Set(sponsorships.map(s => s.cohortId))];
-
-    const dashboards = await Promise.all(
-      cohortIds.map(async (cohortId) => {
-        const anchorSponsorship = sponsorships.find(s => s.cohortId === cohortId);
-        const [groupSponsorships, seats] = await Promise.all([
-          sponsorshipRepository.findAllByEmployerAndCohort(employerUserId, cohortId),
-          seatRepository.findAllByEmployerAndCohort(employerUserId, cohortId)
-        ]);
-
-        return mapDashboard(anchorSponsorship, { sponsorships: groupSponsorships, seats });
+    // Fetch data for each individual sponsorship
+    const allData = await Promise.all(
+      sponsorships.map(async (sponsorship) => {
+        const seats = await seatRepository.findAllBySponsorship(sponsorship.id);
+        return { sponsorship, seats };
       })
     );
+
+    // Compute global totals across ALL sponsorships
+    const allSeats = allData.flatMap(d => d.seats);
+    const totalAllSeats = allSeats.length;
+    const totalActiveSeats = allSeats.filter(seat => seat.status === 'active').length;
+    const totalAssignedSeats = allSeats.filter(seat => seat.status === 'assigned').length;
+    const totalUsedSeats = allSeats.filter(seat => ['assigned', 'active'].includes(seat.status)).length;
+    const totalAvailableSeats = allSeats.filter(seat => seat.status === 'available').length;
+
+    const globalTotals = {
+      totalAllSeats,
+      totalActiveSeats,
+      totalAssignedSeats,
+      totalUsedSeats,
+      totalAvailableSeats
+    };
+
+    const dashboards = allData.map(d => {
+      return mapDashboard(d.sponsorship, { 
+        sponsorships: [d.sponsorship], 
+        seats: d.seats,
+        globalTotals
+      });
+    });
 
     return dashboards;
   }
@@ -610,11 +642,15 @@ class SponsorshipService {
         
         const isPaid = groupSponsorships.some(s => s.status === 'paid');
         const cohortName = groupSponsorships[0]?.cohort?.name || '';
+        const programId = groupSponsorships[0]?.programId || null;
+        const programName = groupSponsorships[0]?.program?.name || '';
 
         // Map each seat to include cohort information
         const seatsWithCohortInfo = seats.map(seat => ({
           cohort_id: cohortId,
           cohort_name: cohortName,
+          programm_id: programId,
+          programm_name: programName,
           total_seats: totalSeats,
           used_seats: usedSeats,
           is_paid: isPaid,

@@ -61,12 +61,25 @@ class SponsorshipRepository {
     });
   }
 
-  //find all sponsership for employeer_user_id
   async findAllByEmployerUserId(employerUserId, options = {}) {
     return Sponsorship.findAll({
       where: {
         employerUserId
       },
+      include: [
+        {
+          model: Cohort,
+          as: 'cohort',
+          attributes: ['id', 'name', 'syncStatus']
+        },
+        {
+          model: Program,
+          as: 'program',
+          attributes: ['id', 'name'],
+          required: false
+        }
+      ],
+      order: [['createdAt', 'DESC']],
       ...options
     });
   }
@@ -120,6 +133,12 @@ class SponsorshipRepository {
           model: Cohort,
           as: 'cohort',
           attributes: ['id', 'name', 'syncStatus']
+        },
+        {
+          model: Program,
+          as: 'program',
+          attributes: ['id', 'name'],
+          required: false
         }
       ],
       order: [['createdAt', 'ASC']],
