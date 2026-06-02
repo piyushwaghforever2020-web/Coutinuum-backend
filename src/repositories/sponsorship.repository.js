@@ -115,6 +115,13 @@ class SponsorshipRepository {
         employerUserId,
         cohortId
       },
+      include: [
+        {
+          model: Cohort,
+          as: 'cohort',
+          attributes: ['id', 'name', 'syncStatus']
+        }
+      ],
       order: [['createdAt', 'ASC']],
       ...options
     });

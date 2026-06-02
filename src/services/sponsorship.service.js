@@ -612,6 +612,7 @@ class SponsorshipService {
 
         return {
           cohort_id: cohortId,
+          cohort_name: groupSponsorships[0].cohort?.name || '',
           total_seats: totalSeats,
           used_seats: usedSeats,
           read_only: !isPaid,
